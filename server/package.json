@@ -1,0 +1,15 @@
+{
+  "name": "hongzhongbao-server",
+  "version": "1.0.0",
+  "description": "红中宝自摸麻将 - 服务器",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "socket.io": "^4.7.4",
+    "cors": "^2.8.5"
+  }
+}
