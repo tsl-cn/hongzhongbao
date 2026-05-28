@@ -24,7 +24,7 @@ const roomManager = new RoomManager();
 const aiPlayers = new Map(); // playerId → AiPlayer instance
 
 // 静态文件（生产环境使用）
-const clientDist = path.join(__dirname, '../../client/dist');
+const clientDist = path.join(__dirname, '../../dist');
 app.use(express.static(clientDist));
 
 // ==================== Socket.IO 事件处理 ====================
@@ -246,36 +246,20 @@ function startGame(roomId) {
 
 // ==================== AI 决策引擎 ====================
 
-function _getOrCreateAI(player, room) {
-  let ai = aiPlayers.get(player.id);
-  if (!ai) {
-    ai = new AiPlayer(player.seatIndex, room.gameState, (actionType, data) => {
-      _handleAIAction(room.id, player.id, actionType, data);
-    });
-    aiPlayers.set(player.id, ai);
-  }
-  return ai;
-}
-
 function _triggerAITurn(room) {
-  // ACTION阶段：处理AI的碰/杠/胡决策
-  if (room.gameState.phase === 'action' && room.gameState.actionQueue.length > 0) {
-    const firstAction = room.gameState.actionQueue[0];
-    const player = room.players[firstAction.seat];
-    if (player && player.isAI) {
-      const ai = _getOrCreateAI(player, room);
-      setTimeout(() => {
-        ai.decide({ type: 'action_available', availableActions: [firstAction] });
-      }, 300 + Math.random() * 300);
-    }
-    return;
-  }
-
-  // DISCARD阶段：当前AI出牌
   const currentPlayer = room.players[room.gameState.currentSeat];
   if (!currentPlayer || !currentPlayer.isAI) return;
 
-  const ai = _getOrCreateAI(currentPlayer, room);
+  // 创建或获取AI实例
+  let ai = aiPlayers.get(currentPlayer.id);
+  if (!ai) {
+    ai = new AiPlayer(currentPlayer.seatIndex, room.gameState, (actionType, data) => {
+      _handleAIAction(room.id, currentPlayer.id, actionType, data);
+    });
+    aiPlayers.set(currentPlayer.id, ai);
+  }
+
+  // 延迟模拟思考
   setTimeout(() => {
     ai.decide({ type: 'discard' });
   }, 500 + Math.random() * 500);

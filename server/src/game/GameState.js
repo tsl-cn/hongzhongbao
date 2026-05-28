@@ -6,8 +6,8 @@
  */
 
 const Wall = require('./Wall');
-const { isWild, TILE_NAMES } = require('./TileDef');
 const FanCalculator = require('./FanCalculator');
+const { isWild, TILE_NAMES } = require('./TileDef');
 
 // 状态常量
 const PHASE = {
@@ -401,22 +401,44 @@ class GameState {
     return { type: 'skip', seat };
   }
 
-  /** 自摸检查：使用 FanCalculator 判断胡牌 */
+  /** 自摸检查：用 FanCalculator 判断是否能胡（含三番起胡） */
   _checkSelfWin(seat) {
     const player = this.players[seat];
     if (!player) return false;
-    const winResult = FanCalculator.checkWin(player.hand);
-    return winResult.isWin;
+
+    const hand = [...player.hand];
+    const result = FanCalculator.calculate(hand, player.melds, {
+      isSelfDraw: true,
+      isDealer: seat === this.windDealer,
+      isKongDraw: this.isKongAfterDraw,
+    });
+
+    if (result.isWin) {
+      const patternNames = result.patterns.map(p => p.name).join(' + ');
+      this._log(`自摸可胡! ${SEAT_NAMES[seat]} ${result.fan}番 (${patternNames})`);
+    }
+
+    return result.isWin;
   }
 
-  /** 点炮胡检查：手牌+待牌合成后判断 */
+  /** 点炮胡检查：将弃牌加入手牌后判断是否能胡 */
   _canWinOnDiscard(seat, tileType) {
     const player = this.players[seat];
     if (!player) return false;
-    // 手牌加入待牌（别人出的牌）合成完整14张
-    const allTiles = [...player.hand, tileType].sort((a, b) => a - b);
-    const winResult = FanCalculator.checkWin(allTiles);
-    return winResult.isWin;
+
+    // 模拟将这张弃牌加入手牌
+    const testHand = [...player.hand, tileType];
+    const result = FanCalculator.calculate(testHand, player.melds, {
+      isSelfDraw: false,
+      isDealer: seat === this.windDealer,
+    });
+
+    if (result.isWin) {
+      const patternNames = result.patterns.map(p => p.name).join(' + ');
+      this._log(`点炮可胡! ${SEAT_NAMES[seat]} ${result.fan}番 (${patternNames})`);
+    }
+
+    return result.isWin;
   }
 
   /** 流局处理 */
@@ -427,35 +449,36 @@ class GameState {
     return { type: 'flow', message: '流局' };
   }
 
-  /** 胡牌结算：使用 FanCalculator 实际算番 */
+  /** 胡牌结算：调用 FanCalculator 真实算番 */
   _settleWin(winSeat, isSelfDraw) {
     this.phase = PHASE.SETTLE;
 
     const seatName = SEAT_NAMES[winSeat];
     const player = this.players[winSeat];
-    this.logEvent(`🏆 ${seatName}(${player.name})${isSelfDraw ? '自摸' : '点炮'}胡牌！`);
+    const hand = [...player.hand];
 
-    // 使用 FanCalculator 实际算番
-    const options = {
+    // 如果是对面点炮，需要将最后一张弃牌加入手牌来算番
+    const calcHand = isSelfDraw ? hand : [...hand];
+
+    const calcResult = FanCalculator.calculate(calcHand, player.melds, {
       isSelfDraw,
-      isDealer: (winSeat === this.windDealer),
-      isKongDraw: this.isKongAfterDraw && isSelfDraw,
-      isRobbingKong: !isSelfDraw && this.lastDiscard && this.lastDiscard.type === 'kong',
-    };
-    const fanResult = FanCalculator.calculate(player.hand, player.melds, options);
+      isDealer: winSeat === this.windDealer,
+      isKongDraw: this.isKongAfterDraw,
+    });
 
-    const fan = fanResult.isWin ? fanResult.fan : 3;
-    const patterns = fanResult.patterns || [];
+    const fan = calcResult.isWin ? calcResult.fan : 3;
+    const patternNames = calcResult.patterns.map(p => p.name).join(' + ');
+    const details = `${fan}番${patternNames ? ' (' + patternNames + ')' : ''}`;
 
-    this.logEvent(`📊 ${seatName}(${player.name}) ${fan}番: ${patterns.join(', ')}`);
+    this.logEvent(`🏆 ${seatName}(${player.name})${isSelfDraw ? '自摸' : '点炮'}胡牌！${details}`);
 
     this.result = {
       type: 'win',
       winner: winSeat,
       isSelfDraw,
       fan,
-      patterns,
-      details: fanResult.detail || '胡牌',
+      details,
+      patterns: calcResult.patterns,
     };
 
     return {
