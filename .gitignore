@@ -6,4 +6,7 @@ dist/
 Thumbs.db
 screenshot-*.png
 verify-*.mjs
+make-zip.*
+hongzhongbao.zip
+*.ps1
 .reasonix/

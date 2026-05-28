@@ -7,6 +7,7 @@
 
 const Wall = require('./Wall');
 const { isWild, TILE_NAMES } = require('./TileDef');
+const FanCalculator = require('./FanCalculator');
 
 // 状态常量
 const PHASE = {
@@ -400,17 +401,22 @@ class GameState {
     return { type: 'skip', seat };
   }
 
-  /** 自摸检查 */
+  /** 自摸检查：使用 FanCalculator 判断胡牌 */
   _checkSelfWin(seat) {
-    // placeholder — 实际由 WinChecker 实现
-    // 返回 boolean
-    return false;
+    const player = this.players[seat];
+    if (!player) return false;
+    const winResult = FanCalculator.checkWin(player.hand);
+    return winResult.isWin;
   }
 
-  /** 点炮胡检查 */
+  /** 点炮胡检查：手牌+待牌合成后判断 */
   _canWinOnDiscard(seat, tileType) {
-    // placeholder — 实际由 WinChecker 实现
-    return false;
+    const player = this.players[seat];
+    if (!player) return false;
+    // 手牌加入待牌（别人出的牌）合成完整14张
+    const allTiles = [...player.hand, tileType].sort((a, b) => a - b);
+    const winResult = FanCalculator.checkWin(allTiles);
+    return winResult.isWin;
   }
 
   /** 流局处理 */
@@ -421,7 +427,7 @@ class GameState {
     return { type: 'flow', message: '流局' };
   }
 
-  /** 胡牌结算 */
+  /** 胡牌结算：使用 FanCalculator 实际算番 */
   _settleWin(winSeat, isSelfDraw) {
     this.phase = PHASE.SETTLE;
 
@@ -429,13 +435,27 @@ class GameState {
     const player = this.players[winSeat];
     this.logEvent(`🏆 ${seatName}(${player.name})${isSelfDraw ? '自摸' : '点炮'}胡牌！`);
 
-    // placeholder — 实际由 FanCalculator 算番
+    // 使用 FanCalculator 实际算番
+    const options = {
+      isSelfDraw,
+      isDealer: (winSeat === this.windDealer),
+      isKongDraw: this.isKongAfterDraw && isSelfDraw,
+      isRobbingKong: !isSelfDraw && this.lastDiscard && this.lastDiscard.type === 'kong',
+    };
+    const fanResult = FanCalculator.calculate(player.hand, player.melds, options);
+
+    const fan = fanResult.isWin ? fanResult.fan : 3;
+    const patterns = fanResult.patterns || [];
+
+    this.logEvent(`📊 ${seatName}(${player.name}) ${fan}番: ${patterns.join(', ')}`);
+
     this.result = {
       type: 'win',
       winner: winSeat,
       isSelfDraw,
-      fan: 3,
-      details: '胡牌(待算番)',
+      fan,
+      patterns,
+      details: fanResult.detail || '胡牌',
     };
 
     return {
