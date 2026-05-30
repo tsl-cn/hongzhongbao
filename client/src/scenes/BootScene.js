@@ -16,13 +16,14 @@ export default class BootScene extends Phaser.Scene {
     const height = this.cameras.main.height;
 
     this.add.text(width / 2, height / 2 - 50, '红中宝', {
-      fontSize: '48px',
+      fontSize: '52px',
       color: '#ffd700',
       fontFamily: 'Arial',
+      fontStyle: 'bold',
     }).setOrigin(0.5);
 
     const loadingText = this.add.text(width / 2, height / 2 + 20, '加载中...', {
-      fontSize: '18px',
+      fontSize: '22px',
       color: '#ffffff',
     }).setOrigin(0.5);
 

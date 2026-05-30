@@ -16,116 +16,159 @@ class FanCalculator {
    * @returns {object} { fan, patterns, detail }
    */
   static calculate(hand, melds, options = {}) {
-    const result = {
-      fan: 0,
-      baseFan: 0,
-      multiplier: 1,
-      patterns: [],     // 番型列表
-      isWin: false,
-      handType: null,   // 'standard' | 'sevenPairs'
-    };
+    const wildCount = hand.filter(t => t === WILD_TILE).length;
 
     // 1. 判断是否能胡
     const winResult = FanCalculator.checkWin(hand);
     if (!winResult.isWin) {
-      return { ...result, isWin: false };
+      return { isWin: false, fan: 0, baseFan: 0, multiplier: 1, patterns: [] };
     }
 
-    result.isWin = true;
-    result.handType = winResult.type;
+    // 2. 计算共享番型（不依赖牌型分解）
+    const shared = FanCalculator._calcSharedPatterns(hand, melds, options, wildCount);
 
-    // 2. 基础番型计算
-    const patterns = [];
-
-    // 牌型相关
-    if (winResult.type === 'sevenPairs') {
-      patterns.push(...FanCalculator._calcSevenPairFans(hand));
+    // 3. 牌型相关番型
+    let typePatterns;
+    if (winResult.type === 'fourWilds') {
+      typePatterns = [{ name: '4红中', fan: 8, desc: '手牌有4张红中万能牌，直接胡' }];
+    } else if (winResult.type === 'sevenPairs') {
+      typePatterns = FanCalculator._calcSevenPairFans(hand);
     } else {
-      // 4面子1将
-      patterns.push(...FanCalculator._calcStandardFans(hand, melds));
+      typePatterns = FanCalculator._calcStandardFans(hand, melds, winResult);
     }
 
-    // 花色相关
-    patterns.push(...FanCalculator._calcSuitFans(hand, melds));
+    // 花色 + 幺九（仅非fourWilds时有效，fourWilds时这些无意义）
+    let suitTerminalPatterns = [];
+    if (winResult.type !== 'fourWilds') {
+      suitTerminalPatterns = [
+        ...FanCalculator._calcSuitFans(hand, melds),
+        ...FanCalculator._calcTerminalHonorFans(hand, melds),
+      ];
+    }
 
-    // 幺九相关
-    patterns.push(...FanCalculator._calcTerminalHonorFans(hand, melds));
+    // 4. 如果有4红中，尝试两条路径取高番
+    if (wildCount >= 4 && winResult.type === 'fourWilds') {
+      // Path A: 4红中（已算）
+      const patternsA = [...shared, ...typePatterns];       // 4红中 + 共享
+      const resolvedA = FanCalculator._resolveOverlaps(patternsA);
+      const fanA = FanCalculator._computeFan(resolvedA, shared._multiplier || 1);
 
-    // 杠相关
+      // Path B: 用红中当万能牌组成标准牌型
+      const stdResult = FanCalculator._checkStandard(hand);
+      let typeB, typePatternsB;
+      if (stdResult.isWin) {
+        typeB = 'standard';
+        typePatternsB = FanCalculator._calcStandardFans(hand, melds, stdResult);
+      } else {
+        const spResult = FanCalculator._checkSevenPairs(hand);
+        if (spResult.isWin) {
+          typeB = 'sevenPairs';
+          typePatternsB = FanCalculator._calcSevenPairFans(hand);
+        } else {
+          typeB = null;
+          typePatternsB = [];
+        }
+      }
+
+      if (typeB) {
+        const suitB = [...FanCalculator._calcSuitFans(hand, melds), ...FanCalculator._calcTerminalHonorFans(hand, melds)];
+        const patternsB = [...shared, ...typePatternsB, ...suitB];
+        const resolvedB = FanCalculator._resolveOverlaps(patternsB);
+        const fanB = FanCalculator._computeFan(resolvedB, shared._multiplier || 1);
+
+        if (fanB.fan > fanA.fan) {
+          return { ...fanB, isWin: true, handType: typeB };
+        }
+      }
+      return { ...fanA, isWin: true, handType: 'fourWilds' };
+    }
+
+    // 普通路径
+    const allPatterns = [...shared, ...typePatterns, ...suitTerminalPatterns];
+    const finalPatterns = FanCalculator._resolveOverlaps(allPatterns);
+    const multiplier = shared._multiplier || 1;
+    const computed = FanCalculator._computeFan(finalPatterns, multiplier);
+    return { ...computed, handType: winResult.type };
+  }
+
+  /** 计算共享番型（门清/杠/无红中/特殊/倍数），返回 patterns[] + _multiplier */
+  static _calcSharedPatterns(hand, melds, options, wildCount) {
+    const patterns = [];
+    let multiplier = 1;
+
+    // 门清
+    const hasExposedMeld = melds.some(m =>
+      m.type === 'chow' || m.type === 'pong' || m.type === 'kong' || m.type === 'exposed_kong'
+    );
+    if (!hasExposedMeld) {
+      patterns.push({ name: '门清', fan: 2, desc: '无碰无明杠（暗杠可），自摸胡牌' });
+    }
+
+    // 杠
     patterns.push(...FanCalculator._calcKongFans(melds));
 
-    // 特殊条件
-    if (options.isSelfDraw && !options.isFirstTurn && !options.isLastTile) {
-      patterns.push({ name: '平胡(自摸)', fan: 2 });
+    // 无红中
+    if (wildCount === 0) {
+      patterns.push({ name: '无红中', fan: 2, desc: '手牌没有红中万能牌' });
     }
 
-    // 门清 (没有副露且自摸)
-    if (melds.length === 0 && options.isSelfDraw) {
-      patterns.push({ name: '门清', fan: 2 });
+    // 自摸
+    if (options.isSelfDraw) {
+      patterns.push({ name: '自摸', fan: 2, desc: '自摸胡牌' });
     }
 
     // 天胡
-    if (options.isFirstTurn && options.isDealer && options.isSelfDraw) {
-      patterns.push({ name: '天胡', fan: 20 });
+    if (options.isFirstTurn && options.isDealer && options.isSelfDraw && !options.hasMelds) {
+      patterns.push({ name: '天胡', fan: 20, desc: '庄家起手14张即胡' });
     }
-
     // 地胡
-    if (options.isFirstTurn && !options.isDealer && !options.isDealerTurn && options.isSelfDraw) {
-      patterns.push({ name: '地胡', fan: 20 });
+    if (options.isFirstTurn && !options.isDealer && !options.isSelfDraw && !options.hasMelds) {
+      patterns.push({ name: '地胡', fan: 20, desc: '庄家首张弃牌时非庄家点炮胡' });
     }
-
     // 人胡
-    if (options.isFirstTurn && !options.isSelfDraw) {
-      patterns.push({ name: '人胡', fan: 20 });
+    if (options.isFirstTurn && !options.isDealer && options.isSelfDraw && !options.hasMelds) {
+      patterns.push({ name: '人胡', fan: 20, desc: '非庄家首次摸牌自摸胡' });
     }
 
-    // 十八罗汉 (4个杠)
+    // 十八罗汉
     const kongCount = melds.filter(m => m.type.includes('kong')).length;
     if (kongCount === 4) {
-      patterns.push({ name: '十八罗汉', fan: 18 });
+      patterns.push({ name: '十八罗汉', fan: 20, desc: '累计4个杠（明/暗杠均可）' });
     }
 
     // 倍数
     if (options.isKongDraw) {
       if (options.isDoubleKongDraw) {
-        result.multiplier *= 4;
-        patterns.push({ name: '杠上杠开花', fan: 4, isMultiplier: true });
+        multiplier *= 4;
+        patterns.push({ name: '杠上杠开花', fan: 4, isMultiplier: true, desc: '连续两次杠后补牌自摸胡' });
       } else {
-        result.multiplier *= 2;
-        patterns.push({ name: '杠上开花', fan: 2, isMultiplier: true });
+        multiplier *= 2;
+        patterns.push({ name: '杠上开花', fan: 2, isMultiplier: true, desc: '杠后补牌自摸胡' });
       }
     }
-
     if (options.isLastTile) {
-      result.multiplier *= 2;
-      patterns.push({ name: '海底捞月', fan: 2, isMultiplier: true });
+      multiplier *= 2;
+      patterns.push({ name: '海底捞月', fan: 2, isMultiplier: true, desc: '牌墙最后一张牌自摸胡' });
     }
-
     if (options.isRobbingKong) {
-      patterns.push({ name: '抢杠胡', fan: 0, note: '抢杠者自算番' });
+      patterns.push({ name: '抢杠胡', fan: 0, desc: '别家补杠时胡那张牌' });
     }
 
-    // 3. 叠加处理 (去除不可叠加的组合)
-    const finalPatterns = FanCalculator._resolveOverlaps(patterns);
-    result.patterns = finalPatterns;
+    patterns._multiplier = multiplier;
+    return patterns;
+  }
 
-    // 4. 计算总番
+  /** 从已解析的番型列表计算最终 fan */
+  static _computeFan(resolvedPatterns, multiplier) {
     let baseFan = 0;
-    for (const p of finalPatterns) {
-      if (!p.isMultiplier) {
-        baseFan += p.fan;
-      }
+    for (const p of resolvedPatterns) {
+      if (!p.isMultiplier) baseFan += p.fan;
     }
-
-    // 三番起胡
-    if (baseFan < 3 && result.multiplier === 1) {
-      return { ...result, isWin: false, reason: '三番起胡不足' };
+    if (baseFan < 3) {
+      return { isWin: false, fan: 0, baseFan, multiplier, patterns: resolvedPatterns, reason: '三番起胡不足' };
     }
-
-    result.baseFan = baseFan;
-    result.fan = Math.min(baseFan * result.multiplier, 20); // 20番封顶
-
-    return result;
+    const fan = Math.min(baseFan * multiplier, 20);
+    return { isWin: true, fan, baseFan, multiplier, patterns: resolvedPatterns };
   }
 
   /**
@@ -133,6 +176,13 @@ class FanCalculator {
    * 返回 { isWin, type: 'standard'|'sevenPairs', combinations? }
    */
   static checkWin(hand) {
+    // 四红中：4张红中直接胡（含非庄家13张）
+    const wildCount = hand.filter(t => t === WILD_TILE).length;
+    if (wildCount >= 4) {
+      // 红中万能牌，4张红中可配成任意牌型
+      return { isWin: true, type: 'fourWilds' };
+    }
+
     // 先检查七小对
     const sevenPairResult = FanCalculator._checkSevenPairs(hand);
     if (sevenPairResult.isWin) {
@@ -172,8 +222,7 @@ class FanCalculator {
         quadruples++;
       } else if (count === 3) {
         pairs += 1;
-        singles.push(t);
-        singles.push(t); // 多的两张算两个单张
+        singles.push(t); // 多余1张需要红中配
       } else if (count === 2) {
         pairs += 1;
       } else {
@@ -371,13 +420,13 @@ class FanCalculator {
     const patterns = [];
 
     if (result.quadruples === 0) {
-      patterns.push({ name: '七小对', fan: 6 });
+      patterns.push({ name: '七小对', fan: 4, desc: '7个对子，无四归一' });
     } else if (result.quadruples === 1) {
-      patterns.push({ name: '豪华七小对', fan: 14 });
+      patterns.push({ name: '豪华七小对', fan: 10, desc: '7个对子含1组四归一' });
     } else if (result.quadruples === 2) {
-      patterns.push({ name: '双豪华七小对', fan: 14 }); // 规则中豪华/双豪华都标14
+      patterns.push({ name: '双豪华七小对', fan: 20, desc: '7个对子含2组四归一' });
     } else if (result.quadruples >= 3) {
-      patterns.push({ name: '三豪华七小对', fan: 20 });
+      patterns.push({ name: '三豪华七小对', fan: 20, desc: '7个对子含3组四归一' });
     }
 
     return patterns;
@@ -386,12 +435,32 @@ class FanCalculator {
   /**
    * 标准牌型（4面子1将）相关番型
    */
-  static _calcStandardFans(hand, melds) {
+  static _calcStandardFans(hand, melds, winResult) {
     const patterns = [];
 
     // 碰碰胡 (所有面子都是刻子)
     if (FanCalculator._isAllPongs(hand, melds)) {
-      patterns.push({ name: '碰碰胡', fan: 4, overlay: 2 });
+      patterns.push({ name: '碰碰胡', fan: 2, desc: '4刻子+1雀头' });
+
+      // 四暗刻 (4个暗刻子+1对将，无碰/无明杠，暗杠算暗刻)
+      const hasExposedMelds = melds.some(m =>
+        m.type === 'chow' || m.type === 'pong' || m.type === 'kong' || m.type === 'exposed_kong'
+      );
+      if (!hasExposedMelds) {
+        patterns.push({ name: '四暗刻', fan: 6, desc: '4暗刻+1雀头，无碰无明杠' });
+      }
+    } else {
+      // 平胡（自摸）：4面子含顺子，雀头非字牌/红中
+      // 碰牌后无杠不能胡
+      const hasPong = melds.some(m => m.type === 'pong');
+      const hasKong = melds.some(m => m.type === 'exposed_kong' || m.type === 'concealed_kong');
+      const canPingHu = !hasPong || hasKong;
+      if (canPingHu) {
+        const pairTile = winResult && winResult.pairTile;
+        if (pairTile !== undefined && pairTile !== WILD_TILE && !isHonor(pairTile)) {
+          patterns.push({ name: '平胡（自摸）', fan: 2, desc: '杂色顺或刻子+1雀头（碰牌后无杠不能胡）' });
+        }
+      }
     }
 
     return patterns;
@@ -399,22 +468,21 @@ class FanCalculator {
 
   /** 检查是否所有面子都是刻子（碰碰胡） */
   static _isAllPongs(hand, melds) {
-    // 如果有顺子副露，不是碰碰胡
-    for (const m of melds) {
-      if (m.type === 'chow') return false;
-    }
-    // 检查手牌是否能组成全是刻子
+    // 有碰副露 → 至少有一个刻子已碰出
+    if (melds.some(m => m.type === 'pong')) return true;
+    // 检查手牌是否只剩刻子+雀头（含红中万能牌补位）
     const counts = {};
     for (const t of hand) {
-      if (isWild(t)) continue; // 红中万能牌
+      if (isWild(t)) continue;
       counts[t] = (counts[t] || 0) + 1;
     }
-    // 手牌中所有非红中牌应该是3张一组或2张(将)
-    let hasPair = false;
+    // 手牌中所有非红中牌应该是3张一组或2张(将)，允许红中补缺
+    let oddCount = 0;
     for (const c of Object.values(counts)) {
-      if (c % 3 !== 0 && c % 3 !== 2) return false;
+      if (c % 3 === 1) oddCount++;
+      if (c % 3 === 1 && c > 3) return false;
     }
-    return true;
+    return oddCount <= 1;
   }
 
   /**
@@ -437,15 +505,15 @@ class FanCalculator {
     if (suitsInHand === 0 && !hasHonor) {
       // 全是红中？不可能，但防御
     } else if (suitsInHand === 1 && hasHonor) {
-      patterns.push({ name: '混一色', fan: 4, overlay: 2 });
+      patterns.push({ name: '混一色', fan: 2, desc: '单花色+字牌' });
     } else if (suitsInHand === 1 && !hasHonor) {
-      patterns.push({ name: '清一色', fan: 8 });
+      patterns.push({ name: '清一色', fan: 6, desc: '纯单花色，无字牌' });
     }
 
     // 全风
     const allWinds = allTiles.every(t => t >= 27 || isWild(t));
     if (allWinds) {
-      patterns.push({ name: '全风', fan: 18 });
+      patterns.push({ name: '全风', fan: 20, desc: '全部由风牌/箭牌组成' });
     }
 
     return patterns;
@@ -470,9 +538,9 @@ class FanCalculator {
       // 检查是否有非幺九的牌（没有风/箭）
       const hasSimpleHonor = allTiles.some(t => t >= 27);
       if (hasSimpleHonor) {
-        patterns.push({ name: '混幺九', fan: 8 });
+        patterns.push({ name: '混幺九', fan: 8, desc: '全幺九牌（含字牌）' });
       } else {
-        patterns.push({ name: '全幺九', fan: 18 });
+        patterns.push({ name: '全幺九', fan: 20, desc: '全幺九牌（无字牌）' });
       }
     }
 
@@ -486,9 +554,9 @@ class FanCalculator {
     const patterns = [];
     for (const m of melds) {
       if (m.type === 'kong' || m.type === 'exposed_kong') {
-        patterns.push({ name: '明杠', fan: 1 });
+        patterns.push({ name: '明杠', fan: 1, desc: '碰后杠或别家弃牌杠' });
       } else if (m.type === 'concealed_kong') {
-        patterns.push({ name: '暗杠', fan: 2 });
+        patterns.push({ name: '暗杠', fan: 2, desc: '手牌四张相同暗杠' });
       }
     }
     return patterns;
@@ -496,64 +564,47 @@ class FanCalculator {
 
   /**
    * 叠加逻辑处理
-   * - 混幺九/全幺九/全风 含碰碰胡，不重复叠加
-   * - 豪华七小对/三豪华七小对 不叠加普通七小对
-   * - 混一色+清一色 不能同时存在
+   * 仅两组互斥：碰碰胡 ⊗ 四暗刻、七小对系列互斥、清一色 ⊗ 混一色
+   * 其余自由叠加
    */
   static _resolveOverlaps(patterns) {
-    const result = [];
-
-    // 提取非倍数和非叠加的番型
-    const regulars = patterns.filter(p => !p.isMultiplier && !p.overlay);
-    const overlays = patterns.filter(p => p.overlay);
+    const regulars = patterns.filter(p => !p.isMultiplier);
     const multipliers = patterns.filter(p => p.isMultiplier);
+    const names = () => regulars.map(p => p.name);
 
-    // 检查是否有互斥组合
-    const names = regulars.map(p => p.name);
+    // 互斥组1：碰碰胡 ⊗ 四暗刻（四暗刻优先）
+    if (names().includes('四暗刻')) {
+      const idx = regulars.findIndex(p => p.name === '碰碰胡');
+      if (idx !== -1) regulars.splice(idx, 1);
+    }
 
-    // 清一色 + 混一色 互斥
-    if (names.includes('清一色') && names.includes('混一色')) {
-      // 清一色优先
+    // 互斥组2：清一色 ⊗ 混一色（清一色优先）
+    if (names().includes('清一色')) {
       const idx = regulars.findIndex(p => p.name === '混一色');
       if (idx !== -1) regulars.splice(idx, 1);
     }
 
-    // 七小对 / 豪华七小对 / 三豪华七小对 互不叠加
-    const sevenPairTypes = ['七小对', '豪华七小对', '双豪华七小对', '三豪华七小对'];
-    const hasSevenPair = sevenPairTypes.some(n => names.includes(n));
-    if (hasSevenPair) {
-      // 只保留最高级的七小对
-      for (const n of sevenPairTypes.slice(0, -1)) {
-        const idx = regulars.findIndex(p => p.name === n);
-        if (idx !== -1 && regulars.some(p => {
-          const ni = sevenPairTypes.indexOf(p.name);
-          return ni > sevenPairTypes.indexOf(n);
-        })) {
-          regulars.splice(idx, 1);
+    // 互斥组3：平胡（自摸）已含自摸，不重复计
+    if (names().includes('平胡（自摸）')) {
+      const idx = regulars.findIndex(p => p.name === '自摸');
+      if (idx !== -1) regulars.splice(idx, 1);
+    }
+
+    // 互斥组4：七小对系列只保留最高级
+    const sevenPairs = ['七小对', '豪华七小对', '双豪华七小对', '三豪华七小对'];
+    const present = sevenPairs.filter(n => names().includes(n));
+    if (present.length > 1) {
+      // 保留番数最大的（最后一个出现的）
+      const keep = present[present.length - 1];
+      for (const n of present) {
+        if (n !== keep) {
+          const idx = regulars.findIndex(p => p.name === n);
+          if (idx !== -1) regulars.splice(idx, 1);
         }
       }
     }
 
-    // 全风 / 全幺九 / 混幺九 不叠加碰碰胡
-    const bigPatterns = ['全风', '全幺九', '混幺九'];
-    const hasBigPattern = bigPatterns.some(n => names.includes(n));
-    if (hasBigPattern) {
-      const pIdx = regulars.findIndex(p => p.name === '碰碰胡');
-      if (pIdx !== -1) regulars.splice(pIdx, 1);
-      const oIdx = overlays.findIndex(p => p.name === '碰碰胡');
-      if (oIdx !== -1) overlays.splice(oIdx, 1);
-    }
-
-    // 叠加番型 (碰碰胡/混一色 叠加)
-    for (const ov of overlays) {
-      const existing = regulars.find(p => p.name === ov.name);
-      if (!existing) {
-        regulars.push({ name: ov.name, fan: ov.overlay });
-      }
-    }
-
-    result.push(...regulars, ...multipliers);
-    return result;
+    return [...regulars, ...multipliers];
   }
 }
 

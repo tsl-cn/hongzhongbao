@@ -10,6 +10,7 @@
  * 结算：中→赢胡牌人番数；不中→赔胡牌人番数
  */
 
+const crypto = require('crypto');
 const { createDeck, TILE_NAMES } = require('./TileDef');
 
 // 马牌对应表：数字1/5/9+东风→东, 2/6+南风+红中→南, 3/7+西风+发财→西, 4/8+北风+白板→北
@@ -42,7 +43,7 @@ class HorseBuyer {
   _shuffleHorseDeck() {
     this.horseDeck = createDeck();
     for (let i = this.horseDeck.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
+      const j = crypto.randomInt(i + 1);
       [this.horseDeck[i], this.horseDeck[j]] = [this.horseDeck[j], this.horseDeck[i]];
     }
     this.horseIndex = 0;
@@ -52,12 +53,15 @@ class HorseBuyer {
    * 买马流程（从独立牌堆抽牌）
    * @param {number} dealerSeat - 庄家座位
    * @param {number} horseCount - 买马张数 (1-4)
+   * @param {object} [fixedDice] - 可选，指定骰子值（用于外部已摇骰决定 picker 时）
+   * @param {number} [fixedDice.dice1]
+   * @param {number} [fixedDice.dice2]
    * @returns {object} { diceSum, pickerSeat, horses: [{tileType, ownerSeat}] }
    */
-  buyHorses(dealerSeat, horseCount = 1) {
-    // 1. 摇骰选人
-    const dice1 = Math.floor(Math.random() * 6) + 1;
-    const dice2 = Math.floor(Math.random() * 6) + 1;
+  buyHorses(dealerSeat, horseCount = 1, fixedDice) {
+    // 1. 摇骰选人（或使用传入的骰子值）
+    const dice1 = fixedDice ? fixedDice.dice1 : crypto.randomInt(1, 7);
+    const dice2 = fixedDice ? fixedDice.dice2 : crypto.randomInt(1, 7);
     const diceSum = dice1 + dice2;
     const pickerOffset = (diceSum - 1) % 4;
     const pickerSeat = (dealerSeat + pickerOffset) % 4;
@@ -81,16 +85,40 @@ class HorseBuyer {
   }
 
   /**
-   * 亮马结算
+   * 直接从独立牌堆随机抽 N 张牌（无骰子，每人独立用）
+   * @param {number} count - 抽牌张数 (0-4)
+   * @returns {Array<{tileType, ownerSeat}>}
    */
-  static settleHorses(horses, winnerSeat, winnerFan) {
-    let totalAdjustment = 0;
+  drawRandom(count) {
+    const horses = [];
+    for (let i = 0; i < count; i++) {
+      if (this.horseIndex >= this.horseDeck.length) {
+        this._shuffleHorseDeck();
+      }
+      const tileType = this.horseDeck[this.horseIndex++];
+      const ownerSeat = HORSE_MAP_INIT[tileType] ?? -1;
+      horses.push({ tileType, ownerSeat });
+    }
+    return horses;
+  }
+
+  /**
+   * 亮马结算
+   * @param {Array} horses - [{ tileType, ownerSeat }]
+   * @param {number} winnerSeat - 胡牌者座位
+   * @param {number} winnerFan - 胡牌番数
+   * @param {number} pickerSeat - 买马者座位
+   * @returns {object} { results, totalAdjustment, pickerSeat, pickerAdjustment }
+   */
+  static settleHorses(horses, winnerSeat, winnerFan, pickerSeat) {
+    let pickerAdjustment = 0;
     const results = [];
 
     for (const horse of horses) {
       const isHit = horse.ownerSeat === winnerSeat;
-      const adjustment = isHit ? winnerFan : -winnerFan;
-      totalAdjustment += adjustment;
+      // 中马 ×3，不中 ×1
+      const adjustment = isHit ? winnerFan * 3 : -winnerFan;
+      pickerAdjustment += adjustment;
       results.push({
         tileType: horse.tileType,
         tileName: TILE_NAMES[horse.tileType] || '?',
@@ -100,7 +128,7 @@ class HorseBuyer {
       });
     }
 
-    return { results, totalAdjustment };
+    return { results, pickerAdjustment, pickerSeat };
   }
 
   static getHorseSeat(tileType) {

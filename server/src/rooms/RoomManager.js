@@ -15,11 +15,12 @@ class RoomManager {
   }
 
   /** 创建房间 */
-  createRoom(hostId, hostName) {
+  createRoom(hostId, hostName, password) {
     const roomId = `room_${++this.roomIdCounter}`;
     const room = {
       id: roomId,
       hostId,
+      password: password || '',   // 空字符串 = 无密码
       players: [],
       gameState: null,
       status: 'waiting', // waiting | playing
@@ -34,12 +35,13 @@ class RoomManager {
   }
 
   /** 加入房间 */
-  joinRoom(roomId, playerId, playerName) {
+  joinRoom(roomId, playerId, playerName, password) {
     const room = this.rooms.get(roomId);
     if (!room) return { error: '房间不存在' };
     if (room.status === 'playing') return { error: '游戏已经开始' };
     if (room.players.length >= 4) return { error: '房间已满' };
     if (this.playerRoom.has(playerId)) return { error: '你已在其他房间' };
+    if (room.password && room.password !== password) return { error: '密码错误' };
 
     const isAI = false;
     const seatIndex = room.players.length;
@@ -148,6 +150,30 @@ class RoomManager {
     return { room, gameState, initData };
   }
 
+  /** 下一局（保留庄家，不重新定庄） */
+  startNextRound(roomId) {
+    const room = this.rooms.get(roomId);
+    if (!room) return { error: '房间不存在' };
+
+    // 确保AI还在
+    this.fillWithAI(roomId);
+
+    if (room.players.length !== 4) {
+      return { error: '人数不足' };
+    }
+
+    room.status = 'playing';
+
+    // 沿用同一个 GameState，保留 windDealer
+    const gameState = room.gameState || new GameState(room.players);
+    room.gameState = gameState;
+
+    // 保留庄家，只洗牌起牌
+    const initData = gameState.initializeNextRound();
+
+    return { room, gameState, initData };
+  }
+
   /** 获取房间信息（不含敏感数据） */
   getRoomInfo(roomId) {
     const room = this.rooms.get(roomId);
@@ -155,6 +181,7 @@ class RoomManager {
     return {
       id: room.id,
       hostId: room.hostId,
+      hasPassword: !!room.password,
       status: room.status,
       playerCount: room.players.length,
       players: room.players.map(p => ({

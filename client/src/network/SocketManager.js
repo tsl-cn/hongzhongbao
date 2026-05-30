@@ -54,6 +54,11 @@ class SocketManager {
     };
   }
 
+  /** 取消监听 */
+  off(event) {
+    delete this.listeners[event];
+  }
+
   /** 发送事件 */
   emit(event, data = {}) {
     if (!this.socket || !this.connected) {
@@ -75,14 +80,14 @@ class SocketManager {
 
   /** ===== 房间 API ===== */
 
-  createRoom(name) {
+  createRoom(name, password) {
     this.playerName = name;
-    this.emit('create_room', { name });
+    this.emit('create_room', { name, password });
   }
 
-  joinRoom(roomId, name) {
+  joinRoom(roomId, name, password) {
     this.playerName = name;
-    this.emit('join_room', { roomId, name });
+    this.emit('join_room', { roomId, name, password });
   }
 
   leaveRoom() {

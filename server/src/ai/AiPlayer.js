@@ -1,31 +1,41 @@
 /**
- * AiPlayer.js — AI玩家入口
+ * AiPlayer.js — AI玩家入口（反作弊版）
  *
- * 通过内部事件驱动，接收游戏状态，做出决策
- * AI不连WebSocket，通过Server内部调用
+ * ## 铁律：AI 不得偷看未出牌墙和其他玩家手牌
+ *
+ * AI 通过 AiView（闭包隔离的信息防火墙）获取游戏信息。
+ * 底层 GameState 引用永不暴露 — 即使 AI 代码被恶意修改也无法访问隐私数据。
+ *
+ * 决策流程：
+ *   事件 → 读取 AiView 公开信息 → 调用纯函数决策模块 → 发送行动
+ *
+ * 决策模块（DiscardPicker / ActionDecider / Shanten）均为纯函数，
+ * 不持有任何 GameState 引用，确保无法绕过防火墙。
  */
 
 const Shanten = require('./Shanten');
 const DiscardPicker = require('./DiscardPicker');
 const ActionDecider = require('./ActionDecider');
-const { TILE_NAMES, WILD_TILE, isWild } = require('../game/TileDef');
+const { TILE_NAMES, isWild } = require('../game/TileDef');
 
 class AiPlayer {
   /**
-   * @param {number} seat - 座位号
-   * @param {object} gameState - GameState实例
+   * @param {number} seat - 座位号 (0-3)
+   * @param {object} view - AiView.createAiView() 返回的只读视图
    * @param {function} emitAction - 发送决策的回调 (actionType, data)
    */
-  constructor(seat, gameState, emitAction) {
+  constructor(seat, view, emitAction) {
     this.seat = seat;
-    this.game = gameState;
+    /** @type {object} AiView 只读视图 — 仅含公开信息 */
+    this.view = view;
     this.emitAction = emitAction;
     this.thinkingTime = 300; // ms, AI思考延迟
   }
 
+  // ──── 事件入口 ──────────────────────────────────────────
+
   /** AI开始决策 */
   async decide(event) {
-    // 模拟思考延迟（更像真人）
     await this._delay(this.thinkingTime);
 
     switch (event.type) {
@@ -46,34 +56,40 @@ class AiPlayer {
     }
   }
 
-  /** 摸牌后 → 检查自摸 → 否则出牌 */
+  // ──── 决策方法（仅使用 AiView 公开信息） ────────────────
+
+  /** 摸牌后 → 自摸检查（服务端已判断） → 否则出牌 */
   _onDraw(event) {
     if (event.canSelfWin) {
-      // 自摸胡
       this.emitAction('win', { seat: this.seat, isSelfDraw: true });
       return;
     }
 
-    // 选牌打出
     this._doDiscard();
   }
 
   /** 出牌决策 */
-  _onDiscard(event) {
+  _onDiscard() {
     this._doDiscard();
   }
 
-  /** 核心：选择弃牌并打出 */
+  /**
+   * 核心：选择弃牌并打出
+   *
+   * 使用的信息（全部来自 AiView 公开接口）：
+   *   - myHand         自己的手牌
+   *   - allDiscards    所有人的弃牌（公开）
+   *   - wallRemaining  牌墙剩余张数（仅数量）
+   */
   _doDiscard() {
-    const player = this.game.players[this.seat];
-    const hand = [...player.hand];
-    const allDiscards = this.game.players.map(p => [...p.discards]);
+    const hand = this.view.myHand;
+    if (!hand || hand.length === 0) return;
 
     const result = DiscardPicker.pickBestDiscard(
       hand,
-      allDiscards,
+      this.view.allDiscards,
       this.seat,
-      this.game.wall.remaining()
+      this.view.wallRemaining
     );
 
     console.log(`[AI-${this.seat}] 打出 ${TILE_NAMES[result.discardTile]} (${result.reason})`);
@@ -86,7 +102,6 @@ class AiPlayer {
 
   /** 有其他玩家出牌后，是否要响应（碰/杠/胡） */
   _onActionAvailable(event) {
-    // 按优先级处理：胡 > 杠 > 碰
     const actions = event.availableActions.filter(a => a.seat === this.seat);
 
     for (const action of actions) {
@@ -109,14 +124,12 @@ class AiPlayer {
       }
     }
 
-    // 没有可做的操作
     this.emitAction('skip', { seat: this.seat });
   }
 
   /** 碰决策 */
   _onPongAvailable(event) {
-    const player = this.game.players[this.seat];
-    const hand = [...player.hand];
+    const hand = this.view.myHand;
     const shanten = Shanten.calculate(hand);
 
     if (ActionDecider.shouldPong(hand, event.tileType, shanten)) {
@@ -138,29 +151,35 @@ class AiPlayer {
   /** 胡决策 */
   _onWinAvailable(event) {
     if (ActionDecider.shouldWin(event.isSelfDraw, event.fan || 3, 0)) {
-      this.emitAction('win', { seat: this.seat, tileType: event.tileType, isSelfDraw: event.isSelfDraw });
+      this.emitAction('win', {
+        seat: this.seat,
+        tileType: event.tileType,
+        isSelfDraw: event.isSelfDraw,
+      });
     } else {
       this.emitAction('skip', { seat: this.seat });
     }
   }
 
+  // ──── 内部决策辅助（仅使用 AiView） ─────────────────────
+
   _decidePong(action) {
-    const player = this.game.players[this.seat];
-    const hand = [...player.hand];
+    const hand = this.view.myHand;
+    if (!hand || hand.length === 0) return false;
     const shanten = Shanten.calculate(hand);
     return ActionDecider.shouldPong(hand, action.tileType, shanten);
   }
 
   _decideKong(action) {
-    const player = this.game.players[this.seat];
-    const hand = [...player.hand];
+    const hand = this.view.myHand;
+    if (!hand || hand.length === 0) return false;
     const shanten = Shanten.calculate(hand);
-    return ActionDecider.shouldKong(action.kongType || 'exposed', hand, action.tileType, shanten);
-  }
-
-  _decideWin(action) {
-    const isSelfDraw = action.isSelfDraw || false;
-    return ActionDecider.shouldWin(isSelfDraw, action.fan || 3, 0);
+    return ActionDecider.shouldKong(
+      action.kongType || 'exposed',
+      hand,
+      action.tileType,
+      shanten
+    );
   }
 
   _delay(ms) {

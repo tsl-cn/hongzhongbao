@@ -11,6 +11,7 @@ const { Server } = require('socket.io');
 const path = require('path');
 const RoomManager = require('./rooms/RoomManager');
 const AiPlayer = require('./ai/AiPlayer');
+const { createAiView } = require('./ai/AiView');
 const HorseBuyer = require('./game/HorseBuyer');
 const { TILE_NAMES } = require('./game/TileDef');
 
@@ -24,7 +25,7 @@ const roomManager = new RoomManager();
 const aiPlayers = new Map(); // playerId → AiPlayer instance
 
 // 静态文件（生产环境使用）
-const clientDist = path.join(__dirname, '../../dist');
+const clientDist = path.join(__dirname, '../../client/dist');
 app.use(express.static(clientDist));
 
 // ==================== Socket.IO 事件处理 ====================
@@ -34,10 +35,10 @@ io.on('connection', (socket) => {
 
   // ---- 房间 ----
   socket.on('create_room', (data) => {
-    const room = roomManager.createRoom(socket.id, data.name || '玩家');
+    const room = roomManager.createRoom(socket.id, data.name || '玩家', data.password || '');
     socket.join(room.id);
     socket.emit('room_created', roomManager.getRoomInfo(room.id));
-    console.log(`[房间] ${socket.id} 创建了房间 ${room.id}`);
+    console.log(`[房间] ${socket.id} 创建了房间 ${room.id}${data.password ? ' (有密码)' : ''}`);
   });
 
   socket.on('get_room_list', () => {
@@ -45,17 +46,16 @@ io.on('connection', (socket) => {
   });
 
   socket.on('join_room', (data) => {
-    const result = roomManager.joinRoom(data.roomId, socket.id, data.name || '玩家');
+    const result = roomManager.joinRoom(data.roomId, socket.id, data.name || '玩家', data.password || '');
     if (result.error) {
       socket.emit('error', { message: result.error });
       return;
     }
     socket.join(data.roomId);
-    socket.emit('room_joined', roomManager.getRoomInfo(data.roomId));
-    // 通知其他玩家
-    socket.to(data.roomId).emit('player_joined', {
-      player: { id: socket.id, name: data.name, seatIndex: result.player.seatIndex },
-    });
+    const roomInfo = roomManager.getRoomInfo(data.roomId);
+    socket.emit('room_joined', roomInfo);
+    // 通知其他玩家（含完整房间信息）
+    socket.to(data.roomId).emit('player_joined', roomInfo);
     console.log(`[房间] ${socket.id} 加入了房间 ${data.roomId}`);
   });
 
@@ -63,7 +63,7 @@ io.on('connection', (socket) => {
     const room = roomManager.leaveRoom(socket.id);
     if (room) {
       socket.leave(room.id);
-      io.to(room.id).emit('player_left', { playerId: socket.id });
+      io.to(room.id).emit('player_left', roomManager.getRoomInfo(room.id));
     }
   });
 
@@ -75,27 +75,59 @@ io.on('connection', (socket) => {
     const room = roomManager.getPlayerRoom(socket.id);
     if (!room) return;
 
-    io.to(room.id).emit('all_ready', { playerId: socket.id });
-
-    // 检查所有真人是否已准备
-    if (roomManager.allHumansReady(room.id)) {
-      startGame(room.id);
-    }
+    // 通知房间内所有人准备状态更新
+    io.to(room.id).emit('player_ready_update', roomManager.getRoomInfo(room.id));
   });
 
-  // ---- 房主强制开始游戏 ----
-  socket.on('host_start_game', () => {
+  // ---- 房主开始游戏（需全员准备） ----
+  socket.on('host_start_game', (data) => {
     const room = roomManager.getPlayerRoom(socket.id);
     if (!room) return;
     if (room.hostId !== socket.id) {
       socket.emit('error', { message: '只有房主可以开始游戏' });
       return;
     }
-    // 填充AI → 强制开始
+    // 填充AI并自动准备
     roomManager.fillWithAI(room.id);
-    // 所有真人标记为已准备
-    room.players.forEach(p => { if (!p.isAI) p.isReady = true; });
+    room.players.forEach(p => { if (p.isAI) p.isReady = true; });
+    // 检查所有真人是否已准备
+    if (!roomManager.allHumansReady(room.id)) {
+      socket.emit('error', { message: '还有玩家未准备' });
+      return;
+    }
     startGame(room.id);
+  });
+
+  // ---- 选马（每人独立） ----
+  socket.on('select_horse_count', (data) => {
+    const room = roomManager.getPlayerRoom(socket.id);
+    if (!room) return;
+
+    // 用 seatIndex 存储选马（不受重连影响）
+    const player = room.players.find(p => !p.isAI && p.id === socket.id);
+    if (!player) return;
+    if (!room._horseSelections) room._horseSelections = {};
+    room._horseSelections[player.seatIndex] = data?.count || 0;
+
+    // 检查所有真人是否已选完（用 seatIndex）
+    const humans = room.players.filter(p => !p.isAI);
+    const allSelected = humans.every(p => room._horseSelections[p.seatIndex] !== undefined);
+    if (allSelected && room._onAllHorsesSelected) {
+      room._onAllHorsesSelected();
+      room._onAllHorsesSelected = null;
+    }
+  });
+
+  // ---- 房主开始下一局（保留庄家） ----
+  socket.on('host_next_round', (data) => {
+    const room = roomManager.getPlayerRoom(socket.id);
+    if (!room) return;
+    if (room.hostId !== socket.id) {
+      socket.emit('error', { message: '只有房主可以开始下一局' });
+      return;
+    }
+    if (room.status !== 'playing') return;
+    startNextRound(room.id);
   });
 
   // ---- 游戏操作 ----
@@ -124,6 +156,7 @@ io.on('connection', (socket) => {
     const room = roomManager.getPlayerRoom(socket.id);
     if (!room || !room.gameState) return;
     const result = room.gameState.requestWin(socket.id);
+    _recordWinner(room);
     _broadcastGameState(room, result);
   });
 
@@ -186,81 +219,253 @@ function startGame(roomId) {
   }
 
   const gameState = room.gameState;
-  const dealer = result.initData.dealer;
-  const diceResults = result.initData.diceResults;
+  const initData = result.initData;
 
-  // 买马：抓完牌后执行
-  const horseBuyer = new HorseBuyer();
-  const fullHorseResult = horseBuyer.buyHorses(dealer, 1); // 默认买1张
-  // 存到 room 上，结算时用
-  room.horseResult = fullHorseResult;
-  gameState.logEvent(`🎲 买马骰子: ${fullHorseResult.dice1}+${fullHorseResult.dice2}=${fullHorseResult.diceSum}`);
-  const seatNames = ['东', '南', '西', '北'];
-  gameState.logEvent(`🐴 ${seatNames[fullHorseResult.pickerSeat]}买马 ${fullHorseResult.horses.length}张`);
+  const playersWithHands = room.players.map(p => {
+    const sortedHand = [...p.hand].sort((a, b) => a - b);
+    return {
+      id: p.id,
+      name: p.name,
+      isAI: p.isAI,
+      seatIndex: p.seatIndex,
+      handSize: sortedHand.length,
+      hand: sortedHand,
+    };
+  });
 
-  // 通知所有人游戏开始（马牌只发数量，不发牌面）
-  const horseForClient = {
-    dice1: fullHorseResult.dice1,
-    dice2: fullHorseResult.dice2,
-    diceSum: fullHorseResult.diceSum,
-    pickerSeat: fullHorseResult.pickerSeat,
-    horseCount: fullHorseResult.horses.length,
+  // 天胡/四红中人胡：跳过选马直接结算
+  if (initData.isHeavenWin || initData.isHumanWin) {
+    io.to(roomId).emit('game_start', {
+      dealer: initData.dealer,
+      dealerName: initData.dealerName,
+      diceResults: initData.diceResults,
+      horseResult: null,
+      needHorseSelection: false,
+      wallRemaining: initData.wallRemaining,
+      seatCount: room.players.length,
+      players: playersWithHands,
+      gameLog: gameState.getLog(),
+      isHeavenWin: initData.isHeavenWin || false,
+      isHumanWin: initData.isHumanWin || false,
+    });
+    // 延迟让客户端看到起手牌，再广播结算
+    setTimeout(() => {
+      _broadcastGameState(room, initData.winResult);
+    }, 3000);
+    return;
+  }
+
+  const dealer = initData.dealer;
+  const diceResults = initData.diceResults;
+
+  // 初始化选马状态
+  room._horseSelections = {};
+
+  // 每人独立选马（AI 0-4，真人由客户端确定）
+  room._horseSelections = {};
+  room.players.forEach(p => {
+    if (p.isAI) {
+      const rand = Math.random();
+      const count = rand < 0.4 ? 0 : rand < 0.7 ? 1 : rand < 0.9 ? 2 : 3;
+      room._horseSelections[p.seatIndex] = count;
+    }
+  });
+
+  // 全部人选完后执行：每人从独立牌堆各抽各的马
+  room._onAllHorsesSelected = () => {
+    const horseBuyer = new HorseBuyer();
+    room.horseResults = [];
+
+    for (let i = 0; i < 4; i++) {
+      const count = room._horseSelections[i] || 0;
+      const p = room.players[i];
+      if (!p) continue;
+      const horses = count > 0 ? horseBuyer.drawRandom(count) : [];
+      room.horseResults[i] = { seatIndex: i, playerName: p.name, count, horses };
+      if (count > 0) {
+        gameState.logEvent(`🐴 ${['东','南','西','北'][i]}(${p.name})买了${count}匹`);
+      }
+    }
+
+    // 广播所有玩家的马牌数（客户端各自在桌边渲染）
+    const horseCounts = [0, 0, 0, 0];
+    for (let i = 0; i < 4; i++) {
+      const hr = room.horseResults[i];
+      if (hr) horseCounts[i] = hr.horses.length;
+    }
+    io.to(roomId).emit('horse_bought', horseCounts);
+
+    setTimeout(() => { _startFirstTurn(roomId); }, 1000);
   };
 
-  // game_start 包含所有玩家的手牌，客户端初始化时直接使用
-  const playersWithHands = room.players.map(p => ({
-    id: p.id,
-    name: p.name,
-    isAI: p.isAI,
-    seatIndex: p.seatIndex,
-    handSize: p.hand.length,
-    hand: [...p.hand],  // 直接包含手牌
-  }));
-
+  // 回调注册完后才发 game_start
   io.to(roomId).emit('game_start', {
     dealer,
-    dealerName: result.initData.dealerName,
+    dealerName: initData.dealerName,
     diceResults,
-    horseResult: horseForClient,
-    wallRemaining: result.initData.wallRemaining,
+    horseResult: null,
+    needHorseSelection: true,
+    wallRemaining: initData.wallRemaining,
     seatCount: room.players.length,
     players: playersWithHands,
     gameLog: gameState.getLog(),
   });
+}
 
-  // 延迟发送 your_turn，给客户端留时间初始化场景 + 播骰子动画
-  setTimeout(() => {
-    // 保护：房间可能已被清空（玩家提前断开）
-    const roomNow = roomManager.rooms.get(roomId);
-    if (!roomNow || !roomNow.gameState || roomNow.players.length === 0) return;
+function _startFirstTurn(roomId) {
+  const roomNow = roomManager.rooms.get(roomId);
+  if (!roomNow || !roomNow.gameState || roomNow.players.length === 0) return;
+  io.to(roomId).emit('your_turn', {
+    seat: roomNow.gameState.currentSeat,
+    playerId: roomNow.players[roomNow.gameState.currentSeat]?.id || '',
+  });
+  _triggerAITurn(roomNow);
+}
 
-    _broadcastToRoom(roomId, 'your_turn', {
-      seat: roomNow.gameState.currentSeat,
-      playerId: roomNow.players[roomNow.gameState.currentSeat]?.id || '',
+// ==================== 下一局（保留庄家，不重新定庄） ====================
+
+function startNextRound(roomId) {
+  const room = roomManager.rooms.get(roomId);
+  if (!room) return;
+
+  // 上一局赢家坐庄
+  if (room._lastWinner !== undefined && room.gameState) {
+    room.gameState.windDealer = room._lastWinner;
+  }
+
+  const result = roomManager.startNextRound(roomId);
+  if (result.error) {
+    io.to(roomId).emit('error', { message: result.error });
+    return;
+  }
+
+  const gameState = room.gameState;
+  const initData = result.initData;
+
+  const playersWithHands = room.players.map(p => {
+    const sortedHand = [...p.hand].sort((a, b) => a - b);
+    return {
+      id: p.id,
+      name: p.name,
+      isAI: p.isAI,
+      seatIndex: p.seatIndex,
+      handSize: sortedHand.length,
+      hand: sortedHand,
+    };
+  });
+
+  // 天胡/四红中人胡：跳过选马直接结算
+  if (initData.isHeavenWin || initData.isHumanWin) {
+    io.to(roomId).emit('game_start', {
+      dealer: initData.dealer,
+      dealerName: initData.dealerName,
+      diceResults: null,
+      horseResult: null,
+      needHorseSelection: false,
+      wallRemaining: initData.wallRemaining,
+      seatCount: room.players.length,
+      players: playersWithHands,
+      isNextRound: true,
+      gameLog: gameState.getLog(),
+      isHeavenWin: initData.isHeavenWin || false,
+      isHumanWin: initData.isHumanWin || false,
     });
+    setTimeout(() => {
+      _broadcastGameState(room, initData.winResult);
+    }, 3000);
+    return;
+  }
 
-    // 如果是AI先手，触发AI
-    _triggerAITurn(roomNow);
-  }, 8000); // 约8秒后开始（骰子动画+买马动画大约需要6-7秒）
+  const dealer = initData.dealer;
+
+  // 每人独立选马（AI 0-4）
+  room._horseSelections = {};
+  room.players.forEach(p => {
+    if (p.isAI) {
+      const rand = Math.random();
+      room._horseSelections[p.seatIndex] = rand < 0.4 ? 0 : rand < 0.7 ? 1 : rand < 0.9 ? 2 : 3;
+    }
+  });
+
+  room._onAllHorsesSelected = () => {
+    const horseBuyer = new HorseBuyer();
+    room.horseResults = [];
+
+    for (let i = 0; i < 4; i++) {
+      const count = room._horseSelections[i] || 0;
+      const p = room.players[i];
+      if (!p) continue;
+      const horses = count > 0 ? horseBuyer.drawRandom(count) : [];
+      room.horseResults[i] = { seatIndex: i, playerName: p.name, count, horses };
+      if (count > 0) {
+        gameState.logEvent(`🐴 ${['东','南','西','北'][i]}(${p.name})买了${count}匹`);
+      }
+    }
+
+    // 广播所有玩家的马牌数
+    const horseCounts = [0, 0, 0, 0];
+    for (let i = 0; i < 4; i++) {
+      const hr = room.horseResults[i];
+      if (hr) horseCounts[i] = hr.horses.length;
+    }
+    io.to(roomId).emit('horse_bought', horseCounts);
+
+    setTimeout(() => { _startFirstTurn(roomId); }, 1000);
+  };
+
+  io.to(roomId).emit('game_start', {
+    dealer,
+    dealerName: initData.dealerName,
+    diceResults: null,
+    horseResult: null,
+    needHorseSelection: true,
+    wallRemaining: initData.wallRemaining,
+    seatCount: room.players.length,
+    players: playersWithHands,
+    isNextRound: true,
+    gameLog: gameState.getLog(),
+  });
 }
 
 // ==================== AI 决策引擎 ====================
 
+function _getOrCreateAI(player, room) {
+  let ai = aiPlayers.get(player.id);
+  if (!ai) {
+    // 创建 AI 信息防火墙：AI 只能看到公开信息
+    const aiView = createAiView(room.gameState, player.seatIndex);
+    ai = new AiPlayer(player.seatIndex, aiView, (actionType, data) => {
+      _handleAIAction(room.id, player.id, actionType, data);
+    });
+    aiPlayers.set(player.id, ai);
+  }
+  return ai;
+}
+
 function _triggerAITurn(room) {
+  // ACTION阶段：处理AI的碰/杠/胡决策
+  if (room.gameState.phase === 'action' && room.gameState.actionQueue.length > 0) {
+    const firstAction = room.gameState.actionQueue[0];
+    const player = room.players[firstAction.seat];
+    if (player && player.isAI) {
+      const ai = _getOrCreateAI(player, room);
+      const roomId = room.id;
+      setTimeout(() => {
+        if (!roomManager.rooms.has(roomId)) return; // 房间已销毁
+        ai.decide({ type: 'action_available', availableActions: [firstAction] });
+      }, 300 + Math.random() * 300);
+    }
+    return;
+  }
+
+  // DISCARD阶段：当前AI出牌
   const currentPlayer = room.players[room.gameState.currentSeat];
   if (!currentPlayer || !currentPlayer.isAI) return;
 
-  // 创建或获取AI实例
-  let ai = aiPlayers.get(currentPlayer.id);
-  if (!ai) {
-    ai = new AiPlayer(currentPlayer.seatIndex, room.gameState, (actionType, data) => {
-      _handleAIAction(room.id, currentPlayer.id, actionType, data);
-    });
-    aiPlayers.set(currentPlayer.id, ai);
-  }
-
-  // 延迟模拟思考
+  const ai = _getOrCreateAI(currentPlayer, room);
+  const roomId = room.id;
   setTimeout(() => {
+    if (!roomManager.rooms.has(roomId)) return; // 房间已销毁
     ai.decide({ type: 'discard' });
   }, 500 + Math.random() * 500);
 }
@@ -286,12 +491,20 @@ function _handleAIAction(roomId, aiId, actionType, data) {
       break;
     case 'win':
       const winResult = room.gameState.requestWin(aiId);
+      _recordWinner(room);
       _broadcastGameState(room, winResult);
       break;
     case 'skip':
       const skipResult = room.gameState.skipAction(aiId);
       _broadcastGameState(room, skipResult);
       break;
+  }
+}
+
+// 记录上一局赢家用于下一局坐庄
+function _recordWinner(room) {
+  if (room && room.gameState && room.gameState.result) {
+    room._lastWinner = room.gameState.result.winner;
   }
 }
 
@@ -325,29 +538,44 @@ function _broadcastGameState(room, result) {
     })),
   });
 
-  // 发送各玩家手牌（只能看自己的）
+  // 发送各玩家手牌（只能看自己的），刚摸的牌单独标记
   for (let i = 0; i < 4; i++) {
     const p = room.players[i];
     if (!p.isAI) {
-      io.to(p.id).emit('your_hand', { hand: [...p.hand], seatIndex: i });
+      const isDrawer = state.lastDrawnTile !== null && state.lastDrawnSeat === i;
+      // 有刚摸牌 → 保留原顺序（客户端移到最右）；无刚摸牌 → 排序
+      const hand = isDrawer ? [...p.hand] : [...p.hand].sort((a, b) => a - b);
+      const handData = { hand, seatIndex: i };
+      if (isDrawer) {
+        handData.lastDrawnTile = state.lastDrawnTile;
+      }
+      io.to(p.id).emit('your_hand', handData);
     }
   }
 
   // 如果是结算阶段
   if (state.phase === 'settle') {
-    // 马牌结算
-    let horseSettlement = null;
-    if (room.horseResult) {
-      const winner = state.result?.winner;
-      if (winner !== undefined && winner !== null) {
-        horseSettlement = HorseBuyer.settleHorses(
-          room.horseResult.horses, winner, state.result.fan || 3
-        );
+    // 每人独立马牌结算
+    const horseResults = [];
+    const winner = state.result?.winner;
+    if (winner !== undefined && winner !== null && room.horseResults) {
+      for (let i = 0; i < 4; i++) {
+        const hr = room.horseResults[i];
+        if (!hr || hr.horses.length === 0) {
+          horseResults[i] = null;
+          continue;
+        }
+        horseResults[i] = {
+          seatIndex: i,
+          playerName: hr.playerName,
+          count: hr.count,
+          ...HorseBuyer.settleHorses(hr.horses, winner, state.result.fan || 3, i),
+        };
       }
     }
     _broadcastToRoom(room.id, 'game_over', {
       result: state.result,
-      horseSettlement,
+      horseResults,
       players: state.players.map(p => ({
         id: p.id,
         name: p.name,
@@ -360,7 +588,7 @@ function _broadcastGameState(room, result) {
     return;
   }
 
-  // 摸牌阶段 → 自动摸牌（不分Human/AI）
+  // 摸牌阶段 → 自动摸牌（不分Human/AI），深度保护防无限递归
   if (state.phase === 'draw') {
     const drawResult = room.gameState.drawTile();
     if (drawResult.error || drawResult.type === 'flow') {
@@ -368,7 +596,15 @@ function _broadcastGameState(room, result) {
       return;
     }
     // 摸牌后再次广播（此时phase变为discard或action）
+    // 加深度标记防循环递归
+    if (!room._broadcastDepth) room._broadcastDepth = 0;
+    if (room._broadcastDepth++ > 10) {
+      room._broadcastDepth = 0;
+      console.error('[BUG] _broadcastGameState 递归过深，终止');
+      return;
+    }
     _broadcastGameState(room, drawResult);
+    room._broadcastDepth = 0;
     return;
   }
 

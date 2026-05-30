@@ -30,9 +30,13 @@ class Player {
     return this.hand.length;
   }
 
-  /** 添加手牌 */
+  /** 添加手牌（不自动排序，保留摸牌顺序） */
   addToHand(tileType) {
     this.hand.push(tileType);
+  }
+
+  /** 手牌排序（打出后调用） */
+  sortHand() {
     this.hand.sort((a, b) => a - b);
   }
 
