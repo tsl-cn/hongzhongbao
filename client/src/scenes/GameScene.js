@@ -34,10 +34,11 @@ export default class GameScene extends Phaser.Scene {
     this._lastClickTime = 0;      // 双击检测
     this._lastClickIdx = -1;
     this._roundStarted = false;   // 牌局未开始，手牌背面
+    this._handBounds = {};        // 手牌边界信息（供碰杠牌定位）
 
     this.TILE_W = 54;         // 自摸手牌宽（1.5倍）
     this.TILE_H = 72;         // 自摸手牌高（1.5倍）
-    this.HAND_Y = 465;        // 16:9适配，手牌上移
+    this.HAND_Y = 515;        // 手牌下移0.7牌位 (72*0.7≈50)
   }
 
   create() {
@@ -168,30 +169,58 @@ export default class GameScene extends Phaser.Scene {
       else if (rel === 1) { x = W - 8; y = H / 2; }
       else { x = 8; y = H / 2; }
 
-      const label = this.add.text(x, y,
-        `${SEAT_NAMES[i]} ${p.name}${p.isAI ? ' (AI)' : ''}`, {
-          fontSize: '15px', color: i === this.mySeat ? '#ffd700' : '#ffffff',
-          fontStyle: i === this.mySeat ? 'bold' : 'normal',
-          padding: { top: 2, bottom: 1 },
-        }).setOrigin(rel === 1 ? 1 : rel === 3 ? 0 : 0.5, 0.5).setDepth(5);
-      this.playerLabels.push(label);
+      if (rel === 1 || rel === 3) {
+        // 左右两家：风位字 + 昵称竖排
+        const originX = rel === 1 ? 1 : 0;
+        const windLabel = this.add.text(x, y, SEAT_NAMES[i], {
+          fontSize: '15px', color: '#ffffff',
+          fontStyle: 'normal', padding: { top: 2, bottom: 1 },
+        }).setOrigin(originX, 0.5).setDepth(5);
+        this.playerLabels.push(windLabel);
+        // 昵称竖排一列
+        const nameChars = (p.isAI ? p.name : p.name).split('');
+        nameChars.forEach((ch, ci) => {
+          const cl = this.add.text(x, y + 18 + ci * 16, ch, {
+            fontSize: '13px', color: '#cccccc',
+            padding: { top: 0, bottom: 0 },
+          }).setOrigin(originX, 0.5).setDepth(5);
+          this.playerLabels.push(cl);
+        });
+      } else {
+        // 自己和对面：原有样式
+        const label = this.add.text(x, y,
+          `${SEAT_NAMES[i]} ${p.name}${p.isAI ? ' (AI)' : ''}`, {
+            fontSize: '15px', color: i === this.mySeat ? '#ffd700' : '#ffffff',
+            fontStyle: i === this.mySeat ? 'bold' : 'normal',
+            padding: { top: 2, bottom: 1 },
+          }).setOrigin(0.5, 0.5).setDepth(5);
+        this.playerLabels.push(label);
+      }
 
-      // 累计输赢（昵称右侧）
+      // 累计输赢（番数总计放大2倍+重定位）
       if (this.game.cumulativeStats && this.game.cumulativeStats[p.name]) {
         const total = this.game.cumulativeStats[p.name].total;
         if (total !== 0) {
           const totalColor = total > 0 ? '#44ff44' : '#ff4444';
           const totalStr = `${total > 0 ? '+' : ''}${total}`;
-          const labelRel = (i - this.mySeat + 4) % 4;
           let tx = x, ty = y;
-          if (labelRel === 0) { tx = x - 55; ty = y; }
-          else if (labelRel === 2) { tx = x + 55; ty = y; }
-          else if (labelRel === 1) { tx = x; ty = y + 16; }
-          else { tx = x; ty = y + 16; }
+          if (rel === 0) {
+            // 玩家：左移0.3牌位 (54*0.3≈16)
+            tx = x - 71; ty = y;
+          } else if (rel === 2) {
+            // 对家：风位字左边移1.5牌位再右移1牌位
+            tx = x - 82; ty = y;
+          } else if (rel === 1) {
+            // 右边家：风位字上方再左移1牌位
+            tx = x - 54; ty = y - 22;
+          } else {
+            // 左边家：风位字上方0.3牌位
+            tx = x; ty = y - 22;
+          }
           const totalLabel = this.add.text(tx, ty, totalStr, {
-            fontSize: '13px', color: totalColor, fontStyle: 'bold',
+            fontSize: '26px', color: totalColor, fontStyle: 'bold',
             padding: { top: 1, bottom: 0 },
-          }).setOrigin(labelRel === 1 ? 0 : labelRel === 3 ? 1 : 0.5, 0.5).setDepth(5);
+          }).setOrigin(0.5, 0.5).setDepth(5);
           this.playerLabels.push(totalLabel);
         }
       }
@@ -207,7 +236,7 @@ export default class GameScene extends Phaser.Scene {
     // 日志区在弃牌矩形内部，高度5行中文
     const logW = 6 * 29 - 20;   // 174 - 边距
     const logH = 100;           // 5行中文 ≈ 5*(13+4)+10
-    this.logBg = this.add.rectangle(W / 2, H / 2 - 36, logW, logH, 0x000000, 0.45)
+    this.logBg = this.add.rectangle(W / 2, H / 2 - 36, logW, logH, 0x000000, 0.7)
       .setDepth(3).setStrokeStyle(1, 0x4a8a5e).setVisible(true);
 
     this.logText = this.add.text(W / 2, H / 2 - 36 - logH / 2 + 6, '', {
@@ -286,6 +315,9 @@ export default class GameScene extends Phaser.Scene {
             dice2.setColor('#ffd700');
 
             this.hintText.setVisible(true).setText(`🎲 ${seatName}(${p.name}) 摇骰: ${r.sum}点`);
+            // 合并到中央日志框
+            this.gameData.gameLog.push(`🎲 ${seatName}(${p.name}) ${r.sum}点`);
+            this._updateLogDisplay(this.gameData.gameLog);
 
             // 1秒后继续下一家
             this.time.delayedCall(1000, () => {
@@ -397,20 +429,25 @@ export default class GameScene extends Phaser.Scene {
     horseCounts.forEach((count, seatIdx) => {
       if (!count || count <= 0) return;
       const rel = (seatIdx - this.mySeat + 4) % 4;
+      const hb = this._handBounds && this._handBounds[rel];
+      const hh = Math.floor(0.5 * hH); // 0.5牌位
 
       let startX, startY, dirX, dirY;
       if (rel === 0) {
-        // 自己：桌边左下
-        startX = 148; startY = H - 17; dirX = 1; dirY = 0;
-      } else if (rel === 2) {
-        // 对家：最上方，居中
-        startX = W / 2 - (count * (hW + hGap)) / 2; startY = 52; dirX = 1; dirY = 0;
-      } else if (rel === 1) {
-        // 右侧：靠右，垂直
-        startX = W - 72; startY = H / 2 + 30; dirX = 0; dirY = 1;
+        // 自己：原位不变
+        startX = 148; startY = H - 27; dirX = 1; dirY = 0;
+      } else if (rel === 3 && hb) {
+        // 左边家：手牌左上+右移3牌位靠中心，竖排向下
+        startX = hb.x - hb.oW / 2 - hh + 3 * hW; startY = hb.topY - hb.oH / 2 - hh; dirX = 0; dirY = 1;
+      } else if (rel === 1 && hb) {
+        // 右边家：手牌右下+左移3牌位靠中心，竖排向上
+        startX = hb.x + hb.oW / 2 + hh - 3 * hW; startY = hb.bottomY + hh; dirX = 0; dirY = -1;
+      } else if (rel === 2 && hb) {
+        // 对家：手牌右上+下移3牌位靠中心，横排向左
+        startX = hb.rightX + hh; startY = hb.y - hb.oH / 2 - hh + 3 * hH; dirX = -1; dirY = 0;
       } else {
-        // 左侧：靠左，垂直
-        startX = 72; startY = H / 2 - 30 - count * (hH + hGap); dirX = 0; dirY = 1;
+        // 后备
+        startX = 0; startY = 0; dirX = 0; dirY = 0;
       }
 
       for (let h = 0; h < count; h++) {
@@ -450,8 +487,11 @@ export default class GameScene extends Phaser.Scene {
     const gapIdx = 13;
     const extraGap = Math.floor(this.TILE_W / 2); // 半个牌位宽
     const totalW = renderHand.length * tileStep + (renderHand.length > gapIdx ? extraGap : 0);
+
     const startX = W / 2 - totalW / 2;
-    this._handLeftX = startX;  // 记录手牌左边界，供马牌定位
+    this._handLeftX = startX;
+    if (!this._handBounds) this._handBounds = {};
+    this._handBounds[0] = { leftX: startX, y: this.HAND_Y, step: tileStep, count: renderHand.length };
 
     // 手牌全部显示背面，等买马结束后翻正（首局+再开局通用）
     const showBack = !this._roundStarted;
@@ -519,6 +559,7 @@ export default class GameScene extends Phaser.Scene {
       if (rel === 2) {
         // 上方（北）：居中靠中心
         const startX = W / 2 - (count * step) / 2;
+        this._handBounds[2] = { rightX: startX + (count - 1) * step + oW, y: 50, oW, oH };
         for (let j = 0; j < count; j++) {
           const tile = TileRenderer.createTile(this, 0,
             startX + j * step, 50, oW, oH, true).setDepth(1);
@@ -528,11 +569,12 @@ export default class GameScene extends Phaser.Scene {
         // 右侧（东）：与玩家牌墙间隔一致（gap=2）
         const sideGap = 2;
         const oStep = oW + sideGap;
-        // 第14张牌半个牌位间隔
         const gapIdx = 13;
         const extraGap = Math.floor(oW / 2);
         const totalH = count * oStep + (count > gapIdx ? extraGap : 0);
         const startY = H / 2 - totalH / 2;
+        const lastY = startY + (count - 1) * oStep + (count > gapIdx ? extraGap : 0);
+        this._handBounds[1] = { bottomY: lastY + oH, x: W - 68, oW, oH };
         for (let j = 0; j < count; j++) {
           let y = startY + j * oStep;
           if (j >= gapIdx) y += extraGap;
@@ -549,6 +591,7 @@ export default class GameScene extends Phaser.Scene {
         const extraGap = Math.floor(oW / 2);
         const totalH = count * oStep + (count > gapIdx ? extraGap : 0);
         const startY = H / 2 - totalH / 2;
+        this._handBounds[3] = { topY: startY, x: 68, oW, oH };
         for (let j = 0; j < count; j++) {
           let y = startY + j * oStep;
           if (j >= gapIdx) y += extraGap;
@@ -616,10 +659,13 @@ export default class GameScene extends Phaser.Scene {
     const colH = perSide * (tH + gap);
 
     // 日志区边界（被弃牌矩形包围）
-    const logLeft = W / 2 - rowW / 2;
-    const logRight = W / 2 + rowW / 2;
-    const logTop = H / 2 - colH / 2;
-    const logBottom = H / 2 + colH / 2;
+    // 牌河整体偏移：上移0.3牌位(11px), 右移0.5牌位(14px)
+    const DISCARD_DX = 14;
+    const DISCARD_DY = -11;
+    const logLeft = W / 2 - rowW / 2 + DISCARD_DX;
+    const logRight = W / 2 + rowW / 2 + DISCARD_DX;
+    const logTop = H / 2 - colH / 2 + DISCARD_DY;
+    const logBottom = H / 2 + colH / 2 + DISCARD_DY;
 
     players.forEach((p, i) => {
       const rel = (i - this.mySeat + 4) % 4;
@@ -629,7 +675,7 @@ export default class GameScene extends Phaser.Scene {
       if (rel === 0 || rel === 2) {
         // 自己（下方）或对家（上方）：水平排列，每行6张
         const maxPerRow = perSide;
-        const startX = W / 2 - rowW / 2;
+        const startX = W / 2 - rowW / 2 + DISCARD_DX;
         // 上下牌河各向中心挪1.5个牌位（向外移半牌高）
         const shiftY = Math.floor(1.5 * (tH + gap));
         const startY = rel === 0 ? logBottom + 2 - shiftY : logTop - 2 - tH + shiftY;
@@ -693,17 +739,26 @@ export default class GameScene extends Phaser.Scene {
       const rel = (i - this.mySeat + 4) % 4;
 
       let baseX, baseY, dirX, dirY;
+      const hb = this._handBounds && this._handBounds[rel];
 
-      if (rel === 0) { // 自己：手牌左边并排
-        baseX = handLeft - tW - 4;  // 手牌左边留4px间距
-        baseY = this.HAND_Y;        // 与手牌同高
-        dirX = -1; dirY = 0;        // 向左排列
-      } else if (rel === 2) { // 对家：紧贴顶部
-        baseX = 8; baseY = 5; dirX = 1; dirY = 0;
-      } else if (rel === 1) { // 右侧：紧贴右边缘
-        baseX = W - 5 - tW; baseY = H / 2 + 20; dirX = 0; dirY = -1;
-      } else { // 左侧：紧贴左边缘
-        baseX = 5; baseY = H / 2 - 20; dirX = 0; dirY = 1;
+      if (rel === 0 && hb) {
+        // 自己：碰杠在手牌最左外侧，同横排，向左排列
+        baseX = hb.leftX - tW - 4; baseY = hb.y; dirX = -1; dirY = 0;
+      } else if (rel === 2 && hb) {
+        // 对家：碰杠在手牌最右外侧，同横排，向右排列
+        baseX = hb.rightX + 4; baseY = hb.y; dirX = 1; dirY = 0;
+      } else if (rel === 1 && hb) {
+        // 右边家：碰杠在手牌最下外侧，同竖排，向下排列
+        baseX = hb.x; baseY = hb.bottomY + 4; dirX = 0; dirY = 1;
+      } else if (rel === 3 && hb) {
+        // 左边家：碰杠在手牌最上外侧，同竖排，向上排列
+        baseX = hb.x; baseY = hb.topY - tH - 4; dirX = 0; dirY = -1;
+      } else {
+        // 后备方案（无边界数据时）
+        if (rel === 0) { baseX = handLeft - tW - 4; baseY = this.HAND_Y; dirX = -1; dirY = 0; }
+        else if (rel === 2) { baseX = 8; baseY = 5; dirX = 1; dirY = 0; }
+        else if (rel === 1) { baseX = W - 5 - tW; baseY = H / 2 + 20; dirX = 0; dirY = -1; }
+        else { baseX = 5; baseY = H / 2 - 20; dirX = 0; dirY = 1; }
       }
 
       melds.forEach((meld) => {
@@ -796,16 +851,27 @@ export default class GameScene extends Phaser.Scene {
     });
   }
 
-  /** 检查手牌中的暗杠机会 */
+  /** 检查杠机会：暗杠（手牌4张）+ 补杠/明杠（手牌1张+已有碰） */
   _findConcealedKongs() {
     const counts = {};
     for (const t of this.hand) {
       counts[t] = (counts[t] || 0) + 1;
     }
     const actions = [];
+    const myPlayer = this.players && this.players[this.mySeat];
     for (const [tileType, count] of Object.entries(counts)) {
+      const tt = parseInt(tileType);
       if (count >= 4) {
-        actions.push({ type: 'kong', seat: this.mySeat, tileType: parseInt(tileType) });
+        // 暗杠
+        actions.push({ type: 'kong', seat: this.mySeat, tileType: tt });
+      } else if (count === 1 && myPlayer) {
+        // 补杠/明杠：手牌有1张 + 已有碰牌
+        const hasPong = myPlayer.melds && myPlayer.melds.some(
+          m => m.type === 'pong' && m.tiles && m.tiles[0] === tt
+        );
+        if (hasPong) {
+          actions.push({ type: 'kong', seat: this.mySeat, tileType: tt, kongType: 'exposed' });
+        }
       }
     }
     return actions;
@@ -1169,10 +1235,10 @@ export default class GameScene extends Phaser.Scene {
           baseY = H - 75;
           dirX = 1; dirY = 0;
         } else if (rel === 2) {
-          // 对家（最上方）
+          // 对家（最上方）下移半个牌位
           const totalW = count * (tileW + gap);
           baseX = W / 2 - totalW / 2;
-          baseY = 18;
+          baseY = 37;
           dirX = 1; dirY = 0;
         } else if (rel === 1) {
           // 下家（右侧）— 垂直排列，向中心移2牌位
@@ -1188,21 +1254,44 @@ export default class GameScene extends Phaser.Scene {
           dirX = 0; dirY = 1;
         }
 
-        // 玩家标签（只显示昵称，不显示东西南北）
-        this.add.text(baseX, baseY - (dirY === 0 ? 16 : 0) + (dirY !== 0 ? -30 : 0),
-          `${p.name}`, {
-            fontSize: '13px', color: labelColor,
-          }).setOrigin(dirX === 0 ? 0.5 : 0, 0.5).setDepth(depthBase + 1);
+        // 手牌中心坐标
+        const handCX = baseX + (dirX !== 0 ? (count - 1) * (tileW + gap) / 2 : 0);
+        const handCY = baseY + (dirY !== 0 ? (count - 1) * (tileH + gap) / 2 : 0);
+        const handHW = tileW / 2, handHH = tileH / 2;
+        let labelX, labelY, labelOriginX;
 
-        // 累计输赢（在昵称下方）
+        if (rel === 0) {
+          // 自己：手牌上方，再上移1牌位
+          labelX = handCX; labelY = baseY - handHH - 8 - tileH;
+          labelOriginX = 0.5;
+        } else if (rel === 2) {
+          // 对家：手牌下方，再上移1牌位
+          labelX = handCX; labelY = baseY + 8;
+          labelOriginX = 0.5;
+        } else if (rel === 1) {
+          // 右边家：手牌左边，再左移1牌位
+          labelX = baseX - 6 - tileW; labelY = handCY;
+          labelOriginX = 1;
+        } else {
+          // 左边家：手牌右边居中
+          labelX = baseX + tileW + 6; labelY = handCY;
+          labelOriginX = 0;
+        }
+
+        // 昵称
+        this.add.text(labelX, labelY, `${p.name}`, {
+          fontSize: '13px', color: labelColor,
+        }).setOrigin(labelOriginX, 0.5).setDepth(depthBase + 1);
+
+        // 累计输赢
         if (this.game.cumulativeStats && this.game.cumulativeStats[p.name]) {
           const total = this.game.cumulativeStats[p.name].total;
           const totalColor = total > 0 ? '#44ff44' : total < 0 ? '#ff4444' : '#aaaaaa';
           const totalStr = `${total > 0 ? '+' : ''}${total}番`;
-          const labelY = baseY - (dirY === 0 ? 30 : 0) + (dirY !== 0 ? -44 : 0);
-          this.add.text(baseX, labelY, totalStr, {
+          const statsY = (rel === 0 || rel === 2) ? labelY + 14 : labelY + 16;
+          this.add.text(labelX, statsY, totalStr, {
             fontSize: '12px', color: totalColor, fontStyle: 'bold',
-          }).setOrigin(dirX === 0 ? 0.5 : 0, 0.5).setDepth(depthBase + 1);
+          }).setOrigin(labelOriginX, 0.5).setDepth(depthBase + 1);
         }
 
         // 渲染每张牌

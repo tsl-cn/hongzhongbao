@@ -14,7 +14,7 @@ const socketMgr = new SocketManager();
 const config = {
   type: Phaser.AUTO,
   parent: 'game-container',
-  width: 800,
+  width: 1066,
   height: 600,
   backgroundColor: '#1a3a2e',
   scale: {

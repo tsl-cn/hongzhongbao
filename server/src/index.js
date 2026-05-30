@@ -266,7 +266,7 @@ function startGame(roomId) {
   room.players.forEach(p => {
     if (p.isAI) {
       const rand = Math.random();
-      const count = rand < 0.4 ? 0 : rand < 0.7 ? 1 : rand < 0.9 ? 2 : 3;
+      const count = rand < 0.4 ? 0 : rand < 0.7 ? 1 : 2;
       room._horseSelections[p.seatIndex] = count;
     }
   });
@@ -383,7 +383,7 @@ function startNextRound(roomId) {
   room.players.forEach(p => {
     if (p.isAI) {
       const rand = Math.random();
-      room._horseSelections[p.seatIndex] = rand < 0.4 ? 0 : rand < 0.7 ? 1 : rand < 0.9 ? 2 : 3;
+      room._horseSelections[p.seatIndex] = rand < 0.4 ? 0 : rand < 0.7 ? 1 : 2;
     }
   });
 
@@ -571,6 +571,15 @@ function _broadcastGameState(room, result) {
           count: hr.count,
           ...HorseBuyer.settleHorses(hr.horses, winner, state.result.fan || 3, i),
         };
+      }
+
+      // 赢家买马：未中的马无惩罚（扣0番），只保留中马收益
+      const winnerHr = room.horseResults[winner];
+      if (winnerHr && winnerHr.horses.length > 0 && horseResults[winner]) {
+        const hitAdjustment = horseResults[winner].results
+          .filter(r => r.isHit)
+          .reduce((sum, r) => sum + r.adjustment, 0);
+        horseResults[winner].pickerAdjustment = hitAdjustment;
       }
     }
     _broadcastToRoom(room.id, 'game_over', {
