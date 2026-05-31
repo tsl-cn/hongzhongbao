@@ -210,39 +210,70 @@ class FanCalculator {
     }
 
     const wildCount = counts[WILD_TILE] || 0;
-    let pairs = 0;
-    let singles = [];
-    let quadruples = 0; // 四张相同的数量
+
+    // === 第一步：从非红中牌中计数 ===
+    let pairs = 0;        // 已成对数
+    let singles = 0;      // 落单张数（需要红中配）
+    let count4Tiles = 0;  // 天然四张相同的牌数
+    let count3Tiles = 0;  // 三张相同的牌数
+    let count2Tiles = 0;  // 两张相同的牌数
 
     for (const [tile, count] of Object.entries(counts)) {
-      const t = parseInt(tile);
-      if (t === WILD_TILE) continue;
-      if (count === 4) {
-        pairs += 2;
-        quadruples++;
-      } else if (count === 3) {
-        pairs += 1;
-        singles.push(t); // 多余1张需要红中配
-      } else if (count === 2) {
-        pairs += 1;
-      } else {
-        singles.push(t);
-      }
+      if (parseInt(tile) === WILD_TILE) continue;
+      if (count === 4) { pairs += 2; count4Tiles++; }
+      else if (count === 3) { pairs += 1; count3Tiles++; singles++; }  // 3张出1对，余1张落单
+      else if (count === 2) { pairs += 1; count2Tiles++; }
+      else if (count === 1) { singles++; }  // 1张落单
     }
 
-    // 红中补单张成对
-    let needed = singles.length;
-    if (wildCount >= needed) {
-      pairs += needed;
-    } else {
-      return { isWin: false };
+    // === 第二步：用红中配落单 ===
+    let wild = wildCount;
+
+    // 优先用红中配 count3 的落单 → 形成四归一（豪华）
+    const wildUsedForQuad3 = Math.min(wild, count3Tiles);
+    pairs += wildUsedForQuad3;       // 每用1红中，落单成对，多1对
+    singles -= wildUsedForQuad3;
+    wild -= wildUsedForQuad3;
+
+    // 其次用红中配普通落单（count1）
+    const wildUsedForSingles = Math.min(wild, singles);
+    pairs += wildUsedForSingles;
+    singles -= wildUsedForSingles;
+    wild -= wildUsedForSingles;
+
+    // 检查是否还有未配对的落单
+    if (singles > 0) return { isWin: false };
+
+    // 尝试用2红中升级count2为四归一（双豪华）
+    // 优先将红中用于形成四归一，最大化豪华等级
+    let wildForQuad2 = 0;
+    while (wild >= 2 && count2Tiles > 0) {
+      wildForQuad2++;
+      count2Tiles--;
+      pairs += 1;       // 原有的1对 + 升级后的1对 = 2对，净增1对
+      wild -= 2;
     }
+
+    // 剩余红中自己成对
+    pairs += Math.floor(wild / 2);
+
+    // === 第三步：判断 ===
+    const quadruples = count4Tiles + wildUsedForQuad3 + wildForQuad2;
 
     if (pairs === 7) {
       return {
         isWin: true,
         quadruples,
         luxuryLevel: quadruples, // 0=普通 1=豪华 2=双豪华 3=三豪华
+      };
+    }
+
+    // 如果超过7对（红中太多）也判胡，按7对算
+    if (pairs > 7) {
+      return {
+        isWin: true,
+        quadruples,
+        luxuryLevel: quadruples,
       };
     }
 

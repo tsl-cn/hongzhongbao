@@ -14,7 +14,7 @@ class RoomManager {
     this.roomIdCounter = 0;
   }
 
-  /** 创建房间 */
+  /** 创建房间（自动补AI到4人） */
   createRoom(hostId, hostName, password) {
     const roomId = `room_${++this.roomIdCounter}`;
     const room = {
@@ -31,22 +31,34 @@ class RoomManager {
     this.rooms.set(roomId, room);
     this.playerRoom.set(hostId, roomId);
 
+    // 补AI到4人，让房间立即可见满员状态
+    this.fillWithAI(roomId);
+
     return room;
   }
 
-  /** 加入房间 */
+  /** 加入房间（满员时自动挤掉AI） */
   joinRoom(roomId, playerId, playerName, password) {
     const room = this.rooms.get(roomId);
     if (!room) return { error: '房间不存在' };
     if (room.status === 'playing') return { error: '游戏已经开始' };
-    if (room.players.length >= 4) return { error: '房间已满' };
     if (this.playerRoom.has(playerId)) return { error: '你已在其他房间' };
     if (room.password && room.password !== password) return { error: '密码错误' };
 
-    const isAI = false;
-    const seatIndex = room.players.length;
-    const player = new Player(playerId, playerName, isAI, seatIndex);
+    // 如果房间满员但有AI，挤掉最后一个AI
+    if (room.players.length >= 4) {
+      const aiIdx = room.players.findIndex(p => p.isAI);
+      if (aiIdx === -1) return { error: '房间已满' };
+      // 移除AI
+      const removedAi = room.players.splice(aiIdx, 1)[0];
+      this.playerRoom.delete(removedAi.id);
+    }
+
+    const seatIndex = room.players.length; // 重排座位号
+    const player = new Player(playerId, playerName, false, seatIndex);
     room.players.push(player);
+    // 重新分配座位号
+    room.players.forEach((p, i) => p.seatIndex = i);
     this.playerRoom.set(playerId, roomId);
 
     return { room, player };
@@ -76,6 +88,11 @@ class RoomManager {
       return null;
     }
 
+    // 有人离开后重新补AI，保持房间始终4人可见
+    if (room.status === 'waiting') {
+      this.fillWithAI(roomId);
+    }
+
     return room;
   }
 
@@ -91,6 +108,7 @@ class RoomManager {
       const aiName = aiNames[room.players.length] || `AI-${room.players.length}`;
       const seatIndex = room.players.length;
       const aiPlayer = new Player(aiId, aiName, true, seatIndex);
+      aiPlayer.isReady = true; // AI 默认已准备
       room.players.push(aiPlayer);
     }
 

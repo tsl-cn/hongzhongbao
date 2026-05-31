@@ -75,8 +75,8 @@ export default class GameScene extends Phaser.Scene {
       fontSize: '16px', color: '#ffd700', fontStyle: 'bold', padding: { top: 2, bottom: 1 },
     }).setOrigin(0.5).setDepth(10);
 
-    this.wallText = this.add.text(W - 12, 12, '', {
-      fontSize: '14px', color: '#aaaaaa', padding: { top: 2, bottom: 1 },
+    this.wallText = this.add.text(W - 48, 48, '', {
+      fontSize: '28px', color: '#ff8800', fontStyle: 'bold', padding: { top: 2, bottom: 1 },
     }).setOrigin(1, 0);
 
     this.hintText = this.add.text(W / 2, H - 12, '', {
@@ -103,8 +103,11 @@ export default class GameScene extends Phaser.Scene {
     // === 牌墙上方麦克风开关 ===
     this._createMicButton();
 
+    // === 淡入动画（配合 LobbyScene 淡出） ===
+    this._playFadeIn();
+
     // === 播放定庄骰子动画 ===
-    this.time.delayedCall(300, () => {
+    this.time.delayedCall(800, () => {
       this._playDealerDiceAnimation(this.gameData.diceResults);
     });
   }
@@ -144,6 +147,20 @@ export default class GameScene extends Phaser.Scene {
     return container;
   }
 
+  /** 淡入动画（从黑色过渡到桌面） */
+  _playFadeIn() {
+    const W = this.cameras.main.width;
+    const H = this.cameras.main.height;
+    const fadeCover = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 1).setDepth(200);
+    this.tweens.add({
+      targets: fadeCover,
+      alpha: 0,
+      duration: 500,
+      ease: 'Power2',
+      onComplete: () => fadeCover.destroy(),
+    });
+  }
+
   /** 找自己的座位 */
   _calcMySeat() {
     for (let i = 0; i < this.players.length; i++) {
@@ -164,33 +181,33 @@ export default class GameScene extends Phaser.Scene {
       const p = this.players[i];
       const rel = (i - this.mySeat + 4) % 4;
       let x, y;
-      if (rel === 0) { x = W / 2; y = H - 25; }
+      if (rel === 0) { x = W / 2; y = H - 39; }
       else if (rel === 2) { x = W / 2; y = 18; }
-      else if (rel === 1) { x = W - 8; y = H / 2; }
-      else { x = 8; y = H / 2; }
+      else if (rel === 1) { x = W - 16; y = H / 2; }
+      else { x = 16; y = H / 2; }
 
       if (rel === 1 || rel === 3) {
         // 左右两家：风位字 + 昵称竖排
         const originX = rel === 1 ? 1 : 0;
         const windLabel = this.add.text(x, y, SEAT_NAMES[i], {
-          fontSize: '15px', color: '#ffffff',
-          fontStyle: 'normal', padding: { top: 2, bottom: 1 },
+          fontSize: '18px', color: '#ffffff', fontStyle: 'bold',
+          padding: { top: 2, bottom: 1 },
         }).setOrigin(originX, 0.5).setDepth(5);
         this.playerLabels.push(windLabel);
-        // 昵称竖排一列
+        // 昵称竖排一列（放大1.2倍）
         const nameChars = (p.isAI ? p.name : p.name).split('');
         nameChars.forEach((ch, ci) => {
-          const cl = this.add.text(x, y + 18 + ci * 16, ch, {
-            fontSize: '13px', color: '#cccccc',
-            padding: { top: 0, bottom: 0 },
+          const cl = this.add.text(x, y + 22 + ci * 19, ch, {
+            fontSize: '16px', color: '#cccccc',
+            padding: { top: 1, bottom: 0 },
           }).setOrigin(originX, 0.5).setDepth(5);
           this.playerLabels.push(cl);
         });
       } else {
-        // 自己和对面：原有样式
+        // 自己和对面：放大1.2倍
         const label = this.add.text(x, y,
           `${SEAT_NAMES[i]} ${p.name}${p.isAI ? ' (AI)' : ''}`, {
-            fontSize: '15px', color: i === this.mySeat ? '#ffd700' : '#ffffff',
+            fontSize: '18px', color: i === this.mySeat ? '#ffd700' : '#ffffff',
             fontStyle: i === this.mySeat ? 'bold' : 'normal',
             padding: { top: 2, bottom: 1 },
           }).setOrigin(0.5, 0.5).setDepth(5);
@@ -211,8 +228,8 @@ export default class GameScene extends Phaser.Scene {
             // 对家：风位字左边移1.5牌位再右移1牌位
             tx = x - 82; ty = y;
           } else if (rel === 1) {
-            // 右边家：风位字上方再左移1牌位
-            tx = x - 54; ty = y - 22;
+            // 右边家：风位字上方再左移1牌位，右移0.7牌位
+            tx = x - 4; ty = y - 22;
           } else {
             // 左边家：风位字上方0.3牌位
             tx = x; ty = y - 22;
@@ -354,66 +371,136 @@ export default class GameScene extends Phaser.Scene {
   }
 
   /** 是否买马选择 */
+  /** 嵌入式买马选择（桌面中央小面板，手牌半透明可见） */
   _showHorseChoice() {
     const W = this.cameras.main.width;
     const H = this.cameras.main.height;
-    const elements = [];
-    const add = (obj) => { elements.push(obj); return obj; };
+    this._horseElements = [];
 
-    add(this.add.rectangle(W / 2, H / 2, 260, 130, 0x000000, 0.8)
-      .setDepth(30).setStrokeStyle(2, 0x4a8a5e));
-    add(this.add.text(W / 2, H / 2 - 35, '是否买马？', {
-      fontSize: '18px', color: '#ffd700', padding: { top: 2 },
-    }).setOrigin(0.5).setDepth(31));
+    // 手牌半透明效果
+    this.tileElements.forEach(t => t.setAlpha(0.3));
+    this._horseElements.push({ destroy: () => this.tileElements.forEach(t => t.setAlpha(1)) });
 
-    const cleanup = () => { elements.forEach(e => e.destroy()); };
+    // 桌面中央面板（加宽，容5个按钮横排）
+    const pw = 460, ph = 110;
+    const px = W / 2, py = H / 2 - 10;
+    const panelBg = this.add.graphics().setDepth(50);
+    panelBg.fillStyle(0x000000, 0.65);
+    panelBg.fillRoundedRect(px - pw / 2, py - ph / 2, pw, ph, 14);
+    panelBg.lineStyle(2, 0xffd700, 0.8);
+    panelBg.strokeRoundedRect(px - pw / 2, py - ph / 2, pw, ph, 14);
+    this._horseElements.push(panelBg);
 
-    const yesBtn = add(this._makeRoundedBtn(W / 2 - 50, H / 2 + 20, 80, 32, 0x4a7a5e,
-      '买马', '16px', '#ffffff', () => { cleanup(); this._showHorseSelector(); }, 31));
+    const title = this.add.text(px, py - 32, '🐴 买马？', {
+      fontSize: '18px', color: '#ffd700', fontStyle: 'bold',
+    }).setOrigin(0.5).setDepth(51);
+    this._horseElements.push(title);
 
-    const noBtn = add(this._makeRoundedBtn(W / 2 + 50, H / 2 + 20, 80, 32, 0x664444,
-      '不买', '16px', '#ffffff', () => {
-        cleanup();
-        this.socket.emit('select_horse_count', { count: 0 });
-        this.hintText.setVisible(true).setText('不买马，开始游戏');
-      }, 31));
+    // 买马按钮（5个横排：不买/1/2/3/4匹）
+    const horseBtnDefs = [
+      { label: '不买', x: -170, color: 0x664444, count: 0 },
+      { label: '1匹',  x: -85,  color: 0x4a7a5e, count: 1 },
+      { label: '2匹',  x: 0,    color: 0x4a7a5e, count: 2 },
+      { label: '3匹',  x: 85,   color: 0x4a7a5e, count: 3 },
+      { label: '4匹',  x: 170,  color: 0x4a7a5e, count: 4 },
+    ];
+    horseBtnDefs.forEach(def => {
+      this._makeHorseBtn(px + def.x, py + 20, def.label, def.color, () => {
+        if (def.count === 0) {
+          this._cleanupHorseUI();
+          this.socket.emit('select_horse_count', { count: 0 });
+          this._showStatusBanner('不买马，开始游戏');
+        } else {
+          this._cleanupHorseUI();
+          this._showHorseSelector(def.count);
+        }
+      });
+    });
   }
 
-  /** 选马UI（定庄后弹出，1-4匹） */
-  _showHorseSelector() {
+  /** 选马数量确认（嵌入式，1-4匹快速选择） */
+  _showHorseSelector(initial) {
     const W = this.cameras.main.width;
     const H = this.cameras.main.height;
-    const bg = this.add.rectangle(W / 2, H / 2, 300, 160, 0x000000, 0.8)
-      .setDepth(30).setStrokeStyle(2, 0x4a8a5e);
-    const title = this.add.text(W / 2, H / 2 - 50, '选择买马数量', {
-      fontSize: '18px', color: '#ffd700',
-    }).setOrigin(0.5).setDepth(31);
+    this._horseElements = [];
 
-    let selected = 1;
-    const btns = [];
-    const redrawSelectors = () => {
-      btns.forEach(b => b.destroy());
-      btns.length = 0;
-      for (let h = 1; h <= 4; h++) {
-        const bx = W / 2 - 75 + (h - 1) * 50;
-        const by = H / 2 + 10;
-        const btn = this._makeRoundedBtn(bx, by, 40, 32,
-          h === selected ? 0x4a7a5e : 0x3a5a4e, `${h}匹`, '14px', '#ffffff', () => {
-            selected = h;
-            redrawSelectors();
-          }, 31);
-        btns.push(btn);
-      }
-    };
-    redrawSelectors();
+    // 手牌半透明
+    this.tileElements.forEach(t => t.setAlpha(0.3));
+    this._horseElements.push({ destroy: () => this.tileElements.forEach(t => t.setAlpha(1)) });
 
-    const ok = this._makeRoundedBtn(W / 2, H / 2 + 55, 100, 30, 0x4a7a5e,
-      '确定', '16px', '#ffffff', () => {
-        bg.destroy(); title.destroy(); ok.destroy();
-        btns.forEach(b => b.destroy());
-        this.socket.emit('select_horse_count', { count: selected });
-        this.hintText.setVisible(true).setText(`🐴 选马${selected}匹，摇骰中...`);
-      }, 31);
+    const pw = 320, ph = 130;
+    const px = W / 2, py = H / 2 - 10;
+    const panelBg = this.add.graphics().setDepth(50);
+    panelBg.fillStyle(0x000000, 0.65);
+    panelBg.fillRoundedRect(px - pw / 2, py - ph / 2, pw, ph, 14);
+    panelBg.lineStyle(2, 0xffd700, 0.8);
+    panelBg.strokeRoundedRect(px - pw / 2, py - ph / 2, pw, ph, 14);
+    this._horseElements.push(panelBg);
+
+    const title = this.add.text(px, py - 35, `🐴 确定买 ${initial} 匹？`, {
+      fontSize: '18px', color: '#ffd700', fontStyle: 'bold',
+    }).setOrigin(0.5).setDepth(51);
+    this._horseElements.push(title);
+
+    const sub = this.add.text(px, py - 12, '马牌将在开局后展示', {
+      fontSize: '12px', color: '#aaaaaa',
+    }).setOrigin(0.5).setDepth(51);
+    this._horseElements.push(sub);
+
+    // 确认/取消按钮
+    this._makeHorseBtn(px - 70, py + 35, '取消', 0x555555, () => {
+      this._cleanupHorseUI();
+      this._showHorseChoice(); // 返回选择页
+    });
+    this._makeHorseBtn(px + 70, py + 35, '确定', 0x4a7a5e, () => {
+      this._cleanupHorseUI();
+      this.socket.emit('select_horse_count', { count: initial });
+      this._showStatusBanner(`🐴 选马${initial}匹，等待其他玩家...`);
+    });
+  }
+
+  /** 买马面板内的按钮 */
+  _makeHorseBtn(x, y, label, color, callback) {
+    const w = 70, h = 30, r = 6;
+    const bg = this.add.graphics().setDepth(51);
+    bg.fillStyle(color, 1);
+    bg.fillRoundedRect(x - w / 2, y - h / 2, w, h, r);
+    this._horseElements.push(bg);
+
+    const hit = this.add.rectangle(x, y, w, h, 0x000000, 0)
+      .setInteractive({ useHandCursor: true }).setDepth(52);
+    hit.on('pointerdown', callback);
+    this._horseElements.push(hit);
+
+    const text = this.add.text(x, y, label, {
+      fontSize: '14px', color: '#ffffff', fontStyle: 'bold',
+    }).setOrigin(0.5).setDepth(52);
+    this._horseElements.push(text);
+  }
+
+  /** 清理买马UI元素 */
+  _cleanupHorseUI() {
+    if (this._horseElements) {
+      this._horseElements.forEach(e => e.destroy());
+      this._horseElements = [];
+    }
+  }
+
+  /** 顶部状态横幅 */
+  _showStatusBanner(text) {
+    const W = this.cameras.main.width;
+    if (this._statusBanner) this._statusBanner.destroy();
+
+    const banner = this.add.rectangle(W / 2, 32, 400, 32, 0x000000, 0.6)
+      .setDepth(50).setStrokeStyle(1, 0xffd700);
+    this._statusBanner = banner;
+    const bannerText = this.add.text(W / 2, 32, text, {
+      fontSize: '14px', color: '#ffd700', fontStyle: 'bold',
+    }).setOrigin(0.5).setDepth(51);
+
+    this._horseElements = this._horseElements || [];
+    this._horseElements.push(banner);
+    this._horseElements.push(bannerText);
   }
 
   /** 显示四家马牌（扣牌，各自靠近桌边） */
@@ -424,7 +511,7 @@ export default class GameScene extends Phaser.Scene {
 
     if (this.horseTiles) this.horseTiles.forEach(t => t.destroy());
     this.horseTiles = [];
-    const hW = 24, hH = 32, hGap = 1;
+    const hW = 24, hH = 32, hGap = 2;
 
     horseCounts.forEach((count, seatIdx) => {
       if (!count || count <= 0) return;
@@ -437,14 +524,18 @@ export default class GameScene extends Phaser.Scene {
         // 自己：原位不变
         startX = 148; startY = H - 27; dirX = 1; dirY = 0;
       } else if (rel === 3 && hb) {
-        // 左边家：手牌左上+右移3牌位靠中心，竖排向下
-        startX = hb.x - hb.oW / 2 - hh + 3 * hW; startY = hb.topY - hb.oH / 2 - hh; dirX = 0; dirY = 1;
+        // 左边家：右移1牌位，上移1.5牌位，左移1.5牌位，缩0.8倍，紧挨竖排
+        startX = hb.x - hb.oW / 2 - hh + 3 * hW - Math.floor(1.5 * hW) + hW;
+        startY = hb.topY - hb.oH / 2 - hh - Math.floor(1.5 * hH); dirX = 0; dirY = 1;
       } else if (rel === 1 && hb) {
-        // 右边家：手牌右下+左移3牌位靠中心，竖排向上
-        startX = hb.x + hb.oW / 2 + hh - 3 * hW; startY = hb.bottomY + hh; dirX = 0; dirY = -1;
+        // 右边家：下移1牌位，右移1.5牌位，逆时针90度，竖列
+        startX = hb.x + hb.oW / 2 + hh - 3 * hW + Math.floor(1.5 * hW) + Math.floor(0.8 * hW);
+        startY = hb.bottomY + hh + hH; dirX = 0; dirY = 1;
       } else if (rel === 2 && hb) {
-        // 对家：手牌右上+下移3牌位靠中心，横排向左
-        startX = hb.rightX + hh; startY = hb.y - hb.oH / 2 - hh + 3 * hH; dirX = -1; dirY = 0;
+        // 对家：上移1牌位，右移1牌位，缩0.8倍，紧挨横排
+        startX = hb.rightX + hh + 2 * hW;
+        startY = hb.y - hb.oH / 2 - hh + Math.floor(0.5 * hH);
+        dirX = -1; dirY = 0;
       } else {
         // 后备
         startX = 0; startY = 0; dirX = 0; dirY = 0;
@@ -454,7 +545,9 @@ export default class GameScene extends Phaser.Scene {
         const hx = startX + h * (hW + hGap) * dirX;
         const hy = startY + h * (hH + hGap) * dirY;
         const tile = TileRenderer.createTile(this, 0, hx, hy, hW, hH, true);
-        tile.setDepth(5).setAlpha(0.9);
+        tile.setDepth(5).setAlpha(0.9).setScale(0.8);
+        // 右家/左家马牌逆时针旋转90度
+        if (rel === 1 || rel === 3) tile.setAngle(-90);
         this.horseTiles.push(tile);
       }
     });
@@ -547,7 +640,7 @@ export default class GameScene extends Phaser.Scene {
     this.opponentTiles = [];
 
     // 所有牌墙向中心靠拢，左右牌墙紧挨（gap=0）
-    const oW = 22, oH = 30;
+    const oW = 24, oH = 32;
 
     for (let i = 0; i < 4; i++) {
       if (i === this.mySeat) continue;
@@ -963,6 +1056,15 @@ export default class GameScene extends Phaser.Scene {
 
     // 买马结果 → 显示四家马牌（扣牌）
     this.socket.on('horse_bought', (data) => {
+      // 清理买马UI
+      this._cleanupHorseUI();
+      if (this._statusBanner) {
+        this._statusBanner.destroy();
+        this._statusBanner = null;
+      }
+      // 翻正手牌（牌局正式开始）
+      this._roundStarted = true;
+      this._renderHand();
       if (data && Array.isArray(data)) {
         this._showHorseTiles(data);
       }
@@ -990,7 +1092,7 @@ export default class GameScene extends Phaser.Scene {
     const H = this.cameras.main.height;
     this.micMuted = false;
 
-    const micX = W / 2 + 65;  // 昵称右侧
+    const micX = W / 2 - 223; // 昵称左侧4牌位
     const micY = H - 25;      // 与昵称同高
 
     const createMic = (muted) => {
@@ -1107,16 +1209,16 @@ export default class GameScene extends Phaser.Scene {
     // 半透明背景遮罩
     this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.75).setDepth(depthBase);
 
-    // 结算面板装饰背景（动态高度，容纳马牌信息）
+    // 结算面板装饰背景（加大高度）
     const hasHorseResults = data.horseResults && data.horseResults.some(h => h && h.results && h.results.length > 0);
-    const panelH = hasHorseResults ? 200 : 165;
+    const panelH = hasHorseResults ? 260 : 225;
     const panelGfx = this.add.graphics().setDepth(depthBase);
     panelGfx.fillStyle(0x1a3a2e, 0.85);
     panelGfx.fillRoundedRect(W / 2 - 280, 22, 560, panelH, 8);
     panelGfx.lineStyle(2, 0x4a8a5e, 0.6);
     panelGfx.strokeRoundedRect(W / 2 - 280, 22, 560, panelH, 8);
 
-    // ====== 标题：胡牌信息 ======
+    // ====== 标题：胡牌信息（下移0.7牌位 ≈ 50px） ======
     let msg = '';
     if (data.result && data.result.type === 'flow') {
       msg = '💨 流局';
@@ -1124,12 +1226,12 @@ export default class GameScene extends Phaser.Scene {
       const winType = data.result.isRobbingKong ? '⚡抢杠' : (data.result.isSelfDraw ? '自摸' : '点炮');
       msg = `🏆 ${this.players[data.result.winner]?.name || '?'} ${winType}胡牌！`;
     }
-    this.add.text(W / 2, 95, msg, {
+    this.add.text(W / 2, 145, msg, {
       fontSize: '24px', color: '#ffd700', fontStyle: 'bold',
       padding: { top: 4, bottom: 2 },
     }).setOrigin(0.5).setDepth(depthBase + 1);
 
-    // ====== 番型+赔付 ======
+    // ====== 番型+赔付（下移0.7牌位） ======
     if (data.result && data.result.fan) {
       const patternsStr = data.result.patterns && data.result.patterns.length > 0
         ? data.result.patterns.map(p => p.name || p).join(' + ')
@@ -1138,28 +1240,27 @@ export default class GameScene extends Phaser.Scene {
       const fanLine = patternsStr
         ? `${data.result.fan}番${robSuffix}: ${patternsStr}`
         : `${data.result.fan}番${robSuffix}`;
-      this.add.text(W / 2, 120, fanLine, {
+      this.add.text(W / 2, 170, fanLine, {
         fontSize: '15px', color: '#ffaa00',
         padding: { top: 3, bottom: 1 },
       }).setOrigin(0.5).setDepth(depthBase + 1);
 
       // 赔付详情
       if (data.result.payments) {
-        // 抢杠胡只显示有赔付的（被抢杠者）
         const entries = Object.entries(data.result.payments)
           .filter(([s, p]) => !data.result.isRobbingKong || p.pay > 0);
         const payLine = entries
           .map(([s, p]) => `${p.playerName}: -${p.pay}番`)
           .join('  ');
-        this.add.text(W / 2, 140, `💰 ${payLine}`, {
+        this.add.text(W / 2, 190, `💰 ${payLine}`, {
           fontSize: '14px', color: '#ffdd88',
           padding: { top: 3, bottom: 1 },
         }).setOrigin(0.5).setDepth(depthBase + 1);
       }
     }
 
-    // ====== 每人独立马牌结算明细（横排） ======
-    let horseY = 160;
+    // ====== 每人独立马牌结算明细（横排，下移0.7牌位） ======
+    let horseY = 210;
     const colX = [W / 2 - 200, W / 2 - 65, W / 2 + 65, W / 2 + 200];
     if (data.horseResults) {
       const withHorses = data.horseResults.filter(hr => hr && hr.results && hr.results.length > 0);
@@ -1216,7 +1317,7 @@ export default class GameScene extends Phaser.Scene {
     const statsEndY = this._renderSettlementStats(depthBase, statsStartY);
 
     // ====== 四家牌墙（带图案UI） ======
-    const tileW = 28, tileH = 38, gap = 1;
+    const tileW = 27, tileH = 36, gap = 1;
     const wallStartY = Math.max(statsEndY + 10 || 135, 135);
 
     if (data.players) {
@@ -1261,20 +1362,20 @@ export default class GameScene extends Phaser.Scene {
         let labelX, labelY, labelOriginX;
 
         if (rel === 0) {
-          // 自己：手牌上方，再上移1牌位
-          labelX = handCX; labelY = baseY - handHH - 8 - tileH;
+          // 自己：手牌上方，下移0.2牌位
+          labelX = handCX; labelY = baseY - handHH - 8 - tileH + 14;
           labelOriginX = 0.5;
         } else if (rel === 2) {
-          // 对家：手牌下方，再上移1牌位
-          labelX = handCX; labelY = baseY + 8;
+          // 对家：手牌下方，下移0.2牌位
+          labelX = handCX; labelY = baseY + 44;
           labelOriginX = 0.5;
         } else if (rel === 1) {
-          // 右边家：手牌左边，再左移1牌位
-          labelX = baseX - 6 - tileW; labelY = handCY;
+          // 右边家：手牌左边，再左移1牌位，上移0.4牌位
+          labelX = baseX - 6 - tileW; labelY = handCY - 28;
           labelOriginX = 1;
         } else {
-          // 左边家：手牌右边居中
-          labelX = baseX + tileW + 6; labelY = handCY;
+          // 左边家：手牌右边居中，上移0.4牌位
+          labelX = baseX + tileW + 6; labelY = handCY - 28;
           labelOriginX = 0;
         }
 
@@ -1283,14 +1384,17 @@ export default class GameScene extends Phaser.Scene {
           fontSize: '13px', color: labelColor,
         }).setOrigin(labelOriginX, 0.5).setDepth(depthBase + 1);
 
-        // 累计输赢
+        // 累计输赢（同排不遮挡 / 同列固定间距）
         if (this.game.cumulativeStats && this.game.cumulativeStats[p.name]) {
           const total = this.game.cumulativeStats[p.name].total;
           const totalColor = total > 0 ? '#44ff44' : total < 0 ? '#ff4444' : '#aaaaaa';
           const totalStr = `${total > 0 ? '+' : ''}${total}番`;
-          const statsY = (rel === 0 || rel === 2) ? labelY + 14 : labelY + 16;
-          this.add.text(labelX, statsY, totalStr, {
-            fontSize: '12px', color: totalColor, fontStyle: 'bold',
+          let statsX = labelX, statsY = labelY;
+          if (rel === 0) { statsX = labelX + 80; statsY = labelY; }
+          else if (rel === 2) { statsX = labelX - 80; statsY = labelY; }
+          else { statsX = labelX; statsY = labelY + 36; }
+          this.add.text(statsX, statsY, totalStr, {
+            fontSize: '24px', color: totalColor, fontStyle: 'bold',
           }).setOrigin(labelOriginX, 0.5).setDepth(depthBase + 1);
         }
 
