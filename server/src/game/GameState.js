@@ -244,7 +244,8 @@ class GameState {
     this.lastDrawnTile = tile;
     this.lastDrawnSeat = this.currentSeat;
 
-    this.logEvent(`${SEAT_NAMES[this.currentSeat]}摸牌，牌墙剩余${this.wall.remaining()}张`);
+    // 牌局日志不显示牌墙剩余（右上角独立显示）
+    this.logEvent(`${SEAT_NAMES[this.currentSeat]}摸牌`);
 
     // 检查自摸
     if (this._checkSelfWin(this.currentSeat)) {

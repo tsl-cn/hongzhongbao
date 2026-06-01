@@ -482,10 +482,10 @@ class FanCalculator {
       }
     } else {
       // 平胡（自摸）：4面子含顺子，雀头非字牌/红中
-      // 碰牌后无杠不能胡
+      // 有碰/明杠/暗杠都不算平胡
       const hasPong = melds.some(m => m.type === 'pong');
-      const hasKong = melds.some(m => m.type === 'exposed_kong' || m.type === 'concealed_kong');
-      const canPingHu = !hasPong || hasKong;
+      const hasKong = melds.some(m => m.type === 'kong' || m.type === 'exposed_kong' || m.type === 'concealed_kong');
+      const canPingHu = !hasPong && !hasKong;
       if (canPingHu) {
         const pairTile = winResult && winResult.pairTile;
         if (pairTile !== undefined && pairTile !== WILD_TILE && !isHonor(pairTile)) {

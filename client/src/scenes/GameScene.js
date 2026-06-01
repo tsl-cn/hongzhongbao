@@ -76,7 +76,10 @@ export default class GameScene extends Phaser.Scene {
       fontSize: '16px', color: '#ffd700', fontStyle: 'bold', padding: { top: 2, bottom: 1 },
     }).setOrigin(0.5).setDepth(10);
 
-    // wallText 已移除（牌局日志不显示牌墙剩余）
+    // 右上角牌墙剩余张数
+    this.wallText = this.add.text(W - 48, 48, '', {
+      fontSize: '28px', color: '#ff8800', fontStyle: 'bold', padding: { top: 2, bottom: 1 },
+    }).setOrigin(1, 0);
 
     this.hintText = this.add.text(W / 2, H - 12, '', {
       fontSize: '16px', color: '#dddddd', padding: { top: 2, bottom: 1 },
@@ -522,19 +525,19 @@ export default class GameScene extends Phaser.Scene {
         // 自己：不变
         startX = 148; startY = H - 27; dirX = 1; dirY = 0;
       } else if (rel === 3 && hb) {
-        // 左家：手牌同一竖列上方，间隔1牌位，方向与手牌一致
-        startX = hb.x;
+        // 左家：手牌同一竖列上方，间隔1牌位，方向与手牌一致；左移0.2牌位
+        startX = hb.x - Math.floor(0.2 * 54);
         startY = hb.topY - hH - count * hH - (count - 1) * hGap;
         dirX = 0; dirY = 1; angle = 90;
       } else if (rel === 1 && hb) {
-        // 右家：手牌同一竖列下方，间隔1牌位，方向与手牌一致
-        startX = hb.x;
+        // 右家：手牌同一竖列下方，间隔1牌位，方向与手牌一致；右移0.2牌位
+        startX = hb.x + Math.floor(0.2 * 54);
         startY = hb.bottomY + hH + hH / 2;
         dirX = 0; dirY = 1; angle = -90;
       } else if (rel === 2 && hb) {
-        // 对家：手牌同一横排右侧，间隔1牌位
+        // 对家：手牌同一横排右侧，间隔1牌位；上移0.2牌位
         startX = hb.rightX + hW;
-        startY = hb.y;
+        startY = hb.y - Math.floor(0.2 * 72);
         dirX = 1; dirY = 0;
       } else {
         startX = 0; startY = 0; dirX = 0; dirY = 0;
@@ -562,7 +565,8 @@ export default class GameScene extends Phaser.Scene {
   _renderHand() {
     this._clearTiles();
     const W = this.cameras.main.width;
-    const tileStep = this.TILE_W + 1;  // 1.5倍牌用更紧凑间距
+    const TILE_STEP = this.TILE_W + 1;
+    const EXTRA_GAP = Math.floor(this.TILE_W / 2);
 
     // 构建渲染用的手牌数组：刚摸的牌移到最右边
     let renderHand = [...this.hand];
@@ -574,26 +578,31 @@ export default class GameScene extends Phaser.Scene {
       }
     }
 
-    // 第14张牌（刚摸来的）放在最右边，间隔半个牌位宽度
-    const gapIdx = 13;
-    const extraGap = Math.floor(this.TILE_W / 2); // 半个牌位宽
-    const totalW = renderHand.length * tileStep + (renderHand.length > gapIdx ? extraGap : 0);
+    // 第14张牌固定锚点（基于14张居中定位，之后不再变动）
+    // 手牌从锚点向左排列，碰杠后左边界右移为碰杠牌留空间
+    if (!this._x14Anchor) {
+      this._x14Anchor = Math.floor(W / 2 + 6 * TILE_STEP + EXTRA_GAP / 2);
+    }
 
-    const startX = W / 2 - totalW / 2;
+    const N = renderHand.length;
+    const startX = N === 14
+      ? this._x14Anchor - (N - 1) * TILE_STEP - EXTRA_GAP
+      : this._x14Anchor - (N - 1) * TILE_STEP;
+
     this._handLeftX = startX;
     if (!this._handBounds) this._handBounds = {};
-    this._handBounds[0] = { leftX: startX, y: this.HAND_Y, step: tileStep, count: renderHand.length };
+    this._handBounds[0] = { leftX: startX, y: this.HAND_Y, step: TILE_STEP, count: N };
 
-    // 手牌全部显示背面，等买马结束后翻正（首局+再开局通用）
     const showBack = !this._roundStarted;
 
     renderHand.forEach((tile, idx) => {
-      let x = startX + idx * tileStep;
-      if (idx >= gapIdx) x += extraGap;
+      // 右对齐：从锚点向左排，14张时13与14间有半个牌位间隔
+      let x = this._x14Anchor - (N - 1 - idx) * TILE_STEP;
+      if (N === 14 && idx <= 12) x -= EXTRA_GAP;
+
       const liftY = (this.selectedTileIdx === idx) ? this.HAND_Y - this.TILE_H / 2 : this.HAND_Y;
 
       if (showBack) {
-        // 再开局：全部牌背，不可点击
         const container = TileRenderer.createTile(this, tile, x, liftY, this.TILE_W, this.TILE_H, true);
         container.setDepth(10);
         this.tileElements.push(container);
@@ -605,7 +614,6 @@ export default class GameScene extends Phaser.Scene {
         container.setDepth(10);
         this.tileElements.push(container);
 
-        // 预出牌高亮：选中牌本身变色
         if (this.selectedTileIdx === idx) {
           const glow = this.add.rectangle(x, liftY, this.TILE_W + 6, this.TILE_H + 6, 0xffff00, 0.25)
             .setDepth(11).setStrokeStyle(2, 0xffdd00);
@@ -637,8 +645,14 @@ export default class GameScene extends Phaser.Scene {
     }
     this.opponentTiles = [];
 
-    // 所有牌墙向中心靠拢，左右牌墙紧挨（gap=0）
     const oW = 24, oH = 32;
+    const sideGap = 2;
+    const oStep = oW + sideGap;
+
+    // 对手手牌锚点固定策略：
+    //   对家→右端固定(靠桌中心)，向左延伸
+    //   右家→底端固定(靠桌中心)，向上延伸
+    //   左家→顶端固定(外缘)，向下延伸(底端靠桌中心收缩)
 
     for (let i = 0; i < 4; i++) {
       if (i === this.mySeat) continue;
@@ -648,44 +662,42 @@ export default class GameScene extends Phaser.Scene {
       const step = oW + 1;
 
       if (rel === 2) {
-        // 上方（北）：居中靠中心
-        const startX = W / 2 - (count * step) / 2;
-        this._handBounds[2] = { rightX: startX + (count - 1) * step + oW, y: 50, oW, oH };
+        // 对家(上方)：右端固定，向左延伸
+        if (!this._xRight_rel2) {
+          this._xRight_rel2 = Math.floor(W / 2 + 5.5 * step + oW / 2);
+        }
+        const startX = this._xRight_rel2 - count * step;
+        this._handBounds[2] = { rightX: this._xRight_rel2, y: 50, oW, oH };
         for (let j = 0; j < count; j++) {
           const tile = TileRenderer.createTile(this, 0,
             startX + j * step, 50, oW, oH, true).setDepth(1);
           this.opponentTiles.push(tile);
         }
       } else if (rel === 1) {
-        // 右侧（东）：与玩家牌墙间隔一致（gap=2）
-        const sideGap = 2;
-        const oStep = oW + sideGap;
-        const gapIdx = 13;
-        const extraGap = Math.floor(oW / 2);
-        const totalH = count * oStep + (count > gapIdx ? extraGap : 0);
-        const startY = H / 2 - totalH / 2;
-        const lastY = startY + (count - 1) * oStep + (count > gapIdx ? extraGap : 0);
-        this._handBounds[1] = { bottomY: lastY + oH, x: W - 68, oW, oH };
+        // 右家(右侧)：底端固定(外缘)，向上延伸(顶端靠桌中心收缩)
+        if (!this._yBottom_rel1) {
+          this._yBottom_rel1 = Math.floor(H / 2 + 5.5 * oStep + oH);
+        }
+        const startY = this._yBottom_rel1 - count * oStep - (count > 13 ? Math.floor(oW / 2) : 0);
+        this._handBounds[1] = { bottomY: this._yBottom_rel1, x: W - 68, oW, oH };
         for (let j = 0; j < count; j++) {
           let y = startY + j * oStep;
-          if (j >= gapIdx) y += extraGap;
+          if (count > 13 && j >= 13) y += Math.floor(oW / 2);
           const tile = TileRenderer.createTile(this, 0,
             W - 68, y, oW, oH, true).setDepth(1);
           tile.setAngle(-90);
           this.opponentTiles.push(tile);
         }
       } else {
-        // 左侧（西）：与玩家牌墙间隔一致（gap=2）
-        const sideGap = 2;
-        const oStep = oW + sideGap;
-        const gapIdx = 13;
-        const extraGap = Math.floor(oW / 2);
-        const totalH = count * oStep + (count > gapIdx ? extraGap : 0);
-        const startY = H / 2 - totalH / 2;
-        this._handBounds[3] = { topY: startY, x: 68, oW, oH };
+        // 左家(左侧)：顶端固定(外缘)，向下延伸(底端靠桌中心收缩)
+        if (!this._yTop_rel3) {
+          this._yTop_rel3 = Math.floor(H / 2 - 6.5 * oStep);
+        }
+        const startY = this._yTop_rel3;
+        this._handBounds[3] = { topY: this._yTop_rel3, x: 68, oW, oH };
         for (let j = 0; j < count; j++) {
           let y = startY + j * oStep;
-          if (j >= gapIdx) y += extraGap;
+          if (count > 13 && j >= 13) y += Math.floor(oW / 2);
           const tile = TileRenderer.createTile(this, 0,
             68, y, oW, oH, true).setDepth(1);
           tile.setAngle(90);
@@ -1015,6 +1027,7 @@ export default class GameScene extends Phaser.Scene {
 
     this.socket.on('game_state_update', (data) => {
       const state = data.state;
+      if (this.wallText) this.wallText.setText(`剩余: ${state.wallRemaining}张`);
       // 更新牌局日志
       if (state.gameLog) this._updateLogDisplay(state.gameLog);
 

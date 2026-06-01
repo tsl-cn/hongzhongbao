@@ -594,28 +594,53 @@ function _broadcastGameState(room, result) {
         if (!horseResults[i]) continue;
         const isWinner = (i === winner);
         const myHits = totalHits[i];
-        let newAdj = 0;
+        let directAdj = 0;
         for (const r of horseResults[i].results) {
           if (isWinner) {
-            // 胡牌家：中马+3fan(含交叉), 不中=0
             r.adjustment = r.isHit ? fan * 3 : 0;
           } else {
-            // 非胡牌家：中马+3fan, 不中=-fan, 再扣(别人中马数)×fan
-            // 交叉项 每匹马减一次(总中马-自己中马) → 结果: X_hit×3fan - X_not×fan - (总中马-X_hit)×fan
             r.adjustment = r.isHit ? fan * 3 : -fan;
           }
-          newAdj += r.adjustment;
+          directAdj += r.adjustment;
         }
-        // 交叉项: 非胡牌家减(总中马-自己中马)×fan（一次）
+        // 计算交叉项
+        let crossTerm = 0;
         if (!isWinner) {
-          newAdj -= fan * (totalAllHits - myHits);
+          crossTerm = -fan * (totalAllHits - myHits);
         }
-        // 胡牌家交叉项: +非胡牌家不中总数×fan - 非胡牌家中总数×fan
         if (isWinner) {
           const totalNonWinnerHits = totalAllHits - myHits;
-          newAdj += totalNonWinnerNot * fan - totalNonWinnerHits * fan;
+          crossTerm = totalNonWinnerNot * fan - totalNonWinnerHits * fan;
         }
-        horseResults[i].pickerAdjustment = newAdj;
+        // 交叉项分摊（便于结算页逐马展示完整输赢）
+        // 胡牌家：只分摊给中马，不中马保持0
+        // 非胡牌家：分摊给所有马
+        if (isWinner) {
+          const hitHorses = horseResults[i].results.filter(r => r.isHit);
+          const hCount = hitHorses.length;
+          if (hCount > 0) {
+            const perHit = Math.floor(crossTerm / hCount);
+            const rem = crossTerm - perHit * hCount;
+            let idx = 0;
+            horseResults[i].results.forEach((r) => {
+              if (r.isHit) {
+                r.adjustment += perHit;
+                if (idx === hCount - 1) r.adjustment += rem;
+                idx++;
+              }
+              // 不中马保持 direct(0)
+            });
+          }
+        } else {
+          const hCount = horseResults[i].results.length;
+          const perHorse = hCount > 0 ? Math.floor(crossTerm / hCount) : 0;
+          const remainder = crossTerm - perHorse * hCount;
+          horseResults[i].results.forEach((r, idx) => {
+            r.adjustment += perHorse;
+            if (idx === hCount - 1) r.adjustment += remainder;
+          });
+        }
+        horseResults[i].pickerAdjustment = directAdj + crossTerm;
       }
     }
     _broadcastToRoom(room.id, 'game_over', {
