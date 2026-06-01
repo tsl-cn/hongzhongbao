@@ -573,13 +573,49 @@ function _broadcastGameState(room, result) {
         };
       }
 
-      // 赢家买马：未中的马无惩罚（扣0番），只保留中马收益
-      const winnerHr = room.horseResults[winner];
-      if (winnerHr && winnerHr.horses.length > 0 && horseResults[winner]) {
-        const hitAdjustment = horseResults[winner].results
-          .filter(r => r.isHit)
-          .reduce((sum, r) => sum + r.adjustment, 0);
-        horseResults[winner].pickerAdjustment = hitAdjustment;
+      // 每匹马独立结算规则（总计必=0）：
+      //   中马: owner +3fan, 其他3家各 -fan
+      //   不中(owner≠胡牌家): owner -fan, 胡牌家 +fan
+      //   不中(owner=胡牌家): 0
+      // 胡牌家合计 = W_hit×fan×3 + 非胡牌家不中总数×fan - 非胡牌家中总数×fan
+      // 非胡牌家X合计 = X_hit×fan×3 - X_not×fan - (总中马 - X_hit)×fan
+      const totalHits = [0, 0, 0, 0];
+      let totalAllHits = 0, totalNonWinnerNot = 0;
+      for (let i = 0; i < 4; i++) {
+        const hr = horseResults[i];
+        if (hr) {
+          totalHits[i] = hr.results.filter(r => r.isHit).length;
+          totalAllHits += totalHits[i];
+          if (i !== winner) totalNonWinnerNot += hr.results.filter(r => !r.isHit).length;
+        }
+      }
+      const fan = state.result.fan || 3;
+      for (let i = 0; i < 4; i++) {
+        if (!horseResults[i]) continue;
+        const isWinner = (i === winner);
+        const myHits = totalHits[i];
+        let newAdj = 0;
+        for (const r of horseResults[i].results) {
+          if (isWinner) {
+            // 胡牌家：中马+3fan(含交叉), 不中=0
+            r.adjustment = r.isHit ? fan * 3 : 0;
+          } else {
+            // 非胡牌家：中马+3fan, 不中=-fan, 再扣(别人中马数)×fan
+            // 交叉项 每匹马减一次(总中马-自己中马) → 结果: X_hit×3fan - X_not×fan - (总中马-X_hit)×fan
+            r.adjustment = r.isHit ? fan * 3 : -fan;
+          }
+          newAdj += r.adjustment;
+        }
+        // 交叉项: 非胡牌家减(总中马-自己中马)×fan（一次）
+        if (!isWinner) {
+          newAdj -= fan * (totalAllHits - myHits);
+        }
+        // 胡牌家交叉项: +非胡牌家不中总数×fan - 非胡牌家中总数×fan
+        if (isWinner) {
+          const totalNonWinnerHits = totalAllHits - myHits;
+          newAdj += totalNonWinnerNot * fan - totalNonWinnerHits * fan;
+        }
+        horseResults[i].pickerAdjustment = newAdj;
       }
     }
     _broadcastToRoom(room.id, 'game_over', {

@@ -1,0 +1,41 @@
+[     147ms] [LOG] %c %c %c %c %c Phaser v3.90.0 (WebGL | Web Audio) %c https://phaser.io/v390 background: #ff0000 background: #ffff00 background: #00ff00 background: #00ffff color: #ffffff; background: #000000 background: transparent @ http://localhost:8080/node_modules/.vite/deps/phaser.js?v=b72d2020:8455
+[     989ms] [LOG] [Socket] 已连接: fPRMpEXXyWYagwOOAAAD @ http://localhost:8080/src/network/SocketManager.js:26
+[  266302ms] [LOG] %c %c %c %c %c Phaser v3.90.0 (WebGL | Web Audio) %c https://phaser.io/v390 background: #ff0000 background: #ffff00 background: #00ff00 background: #00ffff color: #ffffff; background: #000000 background: transparent @ http://localhost:8080/node_modules/.vite/deps/phaser.js?v=b72d2020:8455
+[  267150ms] [LOG] [Socket] 已连接: TSCkuCq_zW9JIpK2AAAH @ http://localhost:8080/src/network/SocketManager.js:26
+[  273051ms] [LOG] [Socket] 已断开 @ http://localhost:8080/src/network/SocketManager.js:33
+[  273051ms] [LOG] [vite] server connection lost. Polling for restart... @ http://localhost:8080/@vite/client:559
+[  274359ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:8080/:0
+[  275117ms] [ERROR] WebSocket connection to 'ws://localhost:8080/socket.io/?EIO=4&transport=websocket' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:8080/node_modules/.vite/deps/socket__io-client.js?v=b72d2020:1062
+[  276667ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:8080/:0
+[  277778ms] [ERROR] WebSocket connection to 'ws://localhost:8080/socket.io/?EIO=4&transport=websocket' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:8080/node_modules/.vite/deps/socket__io-client.js?v=b72d2020:1062
+[  278972ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:8080/:0
+[  281480ms] [LOG] %c %c %c %c %c Phaser v3.90.0 (WebGL | Web Audio) %c https://phaser.io/v390 background: #ff0000 background: #ffff00 background: #00ff00 background: #00ffff color: #ffffff; background: #000000 background: transparent @ http://localhost:8080/node_modules/.vite/deps/phaser.js?v=b72d2020:8455
+[  282349ms] [LOG] [Socket] 已连接: 7gihREsMrs7kLYkbAAAB @ http://localhost:8080/src/network/SocketManager.js:26
+[  523492ms] [LOG] %c %c %c %c %c Phaser v3.90.0 (WebGL | Web Audio) %c https://phaser.io/v390 background: #ff0000 background: #ffff00 background: #00ff00 background: #00ffff color: #ffffff; background: #000000 background: transparent @ http://localhost:8080/node_modules/.vite/deps/phaser.js?v=b72d2020:8455
+[  524551ms] [LOG] [Socket] 已连接: nvQUhvEYFU0Z6mnVAAAH @ http://localhost:8080/src/network/SocketManager.js:26
+[  530542ms] [LOG] [Socket] 已断开 @ http://localhost:8080/src/network/SocketManager.js:33
+[  530542ms] [LOG] [vite] server connection lost. Polling for restart... @ http://localhost:8080/@vite/client:559
+[  531861ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:8080/:0
+[  532620ms] [ERROR] WebSocket connection to 'ws://localhost:8080/socket.io/?EIO=4&transport=websocket' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:8080/node_modules/.vite/deps/socket__io-client.js?v=b72d2020:1062
+[  534169ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:8080/:0
+[  535276ms] [ERROR] WebSocket connection to 'ws://localhost:8080/socket.io/?EIO=4&transport=websocket' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:8080/node_modules/.vite/deps/socket__io-client.js?v=b72d2020:1062
+[  536476ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:8080/:0
+[  538782ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:8080/:0
+[  540058ms] [LOG] %c %c %c %c %c Phaser v3.90.0 (WebGL | Web Audio) %c https://phaser.io/v390 background: #ff0000 background: #ffff00 background: #00ff00 background: #00ffff color: #ffffff; background: #000000 background: transparent @ http://localhost:8080/node_modules/.vite/deps/phaser.js?v=b72d2020:8455
+[  540922ms] [LOG] [Socket] 已连接: nF6MS6ifpXSsIV2jAAAB @ http://localhost:8080/src/network/SocketManager.js:26
+[  659553ms] [LOG] [Socket] 已断开 @ http://localhost:8080/src/network/SocketManager.js:33
+[  660918ms] [ERROR] WebSocket connection to 'ws://localhost:8080/socket.io/?EIO=4&transport=websocket' failed: Connection closed before receiving a handshake response @ http://localhost:8080/node_modules/.vite/deps/socket__io-client.js?v=b72d2020:1062
+[  663921ms] [ERROR] WebSocket connection to 'ws://localhost:8080/socket.io/?EIO=4&transport=websocket' failed: Connection closed before receiving a handshake response @ http://localhost:8080/node_modules/.vite/deps/socket__io-client.js?v=b72d2020:1062
+[  666301ms] [ERROR] WebSocket connection to 'ws://localhost:8080/socket.io/?EIO=4&transport=websocket' failed: Connection closed before receiving a handshake response @ http://localhost:8080/node_modules/.vite/deps/socket__io-client.js?v=b72d2020:1062
+[  671311ms] [ERROR] WebSocket connection to 'ws://localhost:8080/socket.io/?EIO=4&transport=websocket' failed: Connection closed before receiving a handshake response @ http://localhost:8080/node_modules/.vite/deps/socket__io-client.js?v=b72d2020:1062
+[  676324ms] [ERROR] WebSocket connection to 'ws://localhost:8080/socket.io/?EIO=4&transport=websocket' failed: Connection closed before receiving a handshake response @ http://localhost:8080/node_modules/.vite/deps/socket__io-client.js?v=b72d2020:1062
+[  681335ms] [ERROR] WebSocket connection to 'ws://localhost:8080/socket.io/?EIO=4&transport=websocket' failed: Connection closed before receiving a handshake response @ http://localhost:8080/node_modules/.vite/deps/socket__io-client.js?v=b72d2020:1062
+[  686344ms] [ERROR] WebSocket connection to 'ws://localhost:8080/socket.io/?EIO=4&transport=websocket' failed: Connection closed before receiving a handshake response @ http://localhost:8080/node_modules/.vite/deps/socket__io-client.js?v=b72d2020:1062
+[  691359ms] [ERROR] WebSocket connection to 'ws://localhost:8080/socket.io/?EIO=4&transport=websocket' failed: Connection closed before receiving a handshake response @ http://localhost:8080/node_modules/.vite/deps/socket__io-client.js?v=b72d2020:1062
+[  696366ms] [ERROR] WebSocket connection to 'ws://localhost:8080/socket.io/?EIO=4&transport=websocket' failed: Connection closed before receiving a handshake response @ http://localhost:8080/node_modules/.vite/deps/socket__io-client.js?v=b72d2020:1062
+[  701376ms] [ERROR] WebSocket connection to 'ws://localhost:8080/socket.io/?EIO=4&transport=websocket' failed: Connection closed before receiving a handshake response @ http://localhost:8080/node_modules/.vite/deps/socket__io-client.js?v=b72d2020:1062
+[  706387ms] [ERROR] WebSocket connection to 'ws://localhost:8080/socket.io/?EIO=4&transport=websocket' failed: Connection closed before receiving a handshake response @ http://localhost:8080/node_modules/.vite/deps/socket__io-client.js?v=b72d2020:1062
+[  711400ms] [ERROR] WebSocket connection to 'ws://localhost:8080/socket.io/?EIO=4&transport=websocket' failed: Connection closed before receiving a handshake response @ http://localhost:8080/node_modules/.vite/deps/socket__io-client.js?v=b72d2020:1062
+[  716414ms] [ERROR] WebSocket connection to 'ws://localhost:8080/socket.io/?EIO=4&transport=websocket' failed: Connection closed before receiving a handshake response @ http://localhost:8080/node_modules/.vite/deps/socket__io-client.js?v=b72d2020:1062
+[  721422ms] [ERROR] WebSocket connection to 'ws://localhost:8080/socket.io/?EIO=4&transport=websocket' failed: Connection closed before receiving a handshake response @ http://localhost:8080/node_modules/.vite/deps/socket__io-client.js?v=b72d2020:1062
+[  726429ms] [ERROR] WebSocket connection to 'ws://localhost:8080/socket.io/?EIO=4&transport=websocket' failed: Connection closed before receiving a handshake response @ http://localhost:8080/node_modules/.vite/deps/socket__io-client.js?v=b72d2020:1062

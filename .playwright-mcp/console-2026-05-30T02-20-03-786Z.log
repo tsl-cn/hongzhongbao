@@ -1,0 +1,3 @@
+[     225ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:8080/:0
+[    8404ms] [LOG] %c %c %c %c %c Phaser v3.90.0 (WebGL | Web Audio) %c https://phaser.io/v390 background: #ff0000 background: #ffff00 background: #00ff00 background: #00ffff color: #ffffff; background: #000000 background: transparent @ http://localhost:8080/node_modules/.vite/deps/phaser.js?v=b72d2020:8455
+[    9262ms] [LOG] [Socket] 已连接: NQ4v8yXqV1ppUEAZAAAB @ http://localhost:8080/src/network/SocketManager.js:26

@@ -1,0 +1,21 @@
+[     129ms] [LOG] %c %c %c %c %c Phaser v3.90.0 (WebGL | Web Audio) %c https://phaser.io/v390 background: #ff0000 background: #ffff00 background: #00ff00 background: #00ffff color: #ffffff; background: #000000 background: transparent @ http://localhost:8080/node_modules/.vite/deps/phaser.js?v=b72d2020:8455
+[     901ms] [LOG] [Socket] 已连接: ndWRmx0JWYmnAiUTAAAJ @ http://localhost:8080/src/network/SocketManager.js:26
+[ 7508441ms] [LOG] %c %c %c %c %c Phaser v3.90.0 (WebGL | Web Audio) %c https://phaser.io/v390 background: #ff0000 background: #ffff00 background: #00ff00 background: #00ffff color: #ffffff; background: #000000 background: transparent @ http://localhost:8080/node_modules/.vite/deps/phaser.js?v=b72d2020:8455
+[ 7509613ms] [LOG] [Socket] 已连接: 6AJjvGHq5IwIij-VAAAP @ http://localhost:8080/src/network/SocketManager.js:26
+[ 7528866ms] [LOG] %c %c %c %c %c Phaser v3.90.0 (WebGL | Web Audio) %c https://phaser.io/v390 background: #ff0000 background: #ffff00 background: #00ff00 background: #00ffff color: #ffffff; background: #000000 background: transparent @ http://localhost:8080/node_modules/.vite/deps/phaser.js?v=b72d2020:8455
+[ 7529776ms] [LOG] [Socket] 已连接: 2ujI92JiXlv2y-yBAAAT @ http://localhost:8080/src/network/SocketManager.js:26
+[ 7548822ms] [LOG] %c %c %c %c %c Phaser v3.90.0 (WebGL | Web Audio) %c https://phaser.io/v390 background: #ff0000 background: #ffff00 background: #00ff00 background: #00ffff color: #ffffff; background: #000000 background: transparent @ http://localhost:8080/node_modules/.vite/deps/phaser.js?v=b72d2020:8455
+[ 7549728ms] [LOG] [Socket] 已连接: uLFpIeJXuVLpo-tCAAAX @ http://localhost:8080/src/network/SocketManager.js:26
+[ 7566569ms] [LOG] %c %c %c %c %c Phaser v3.90.0 (WebGL | Web Audio) %c https://phaser.io/v390 background: #ff0000 background: #ffff00 background: #00ff00 background: #00ffff color: #ffffff; background: #000000 background: transparent @ http://localhost:8080/node_modules/.vite/deps/phaser.js?v=b72d2020:8455
+[ 7567590ms] [LOG] [Socket] 已连接: nKGiGWyYM3avhmwoAAAb @ http://localhost:8080/src/network/SocketManager.js:26
+[ 7586545ms] [LOG] [Socket] 已断开 @ http://localhost:8080/src/network/SocketManager.js:33
+[ 7586546ms] [LOG] [vite] server connection lost. Polling for restart... @ http://localhost:8080/@vite/client:559
+[ 7587858ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:8080/:0
+[ 7589174ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:8080/:0
+[ 7590070ms] [ERROR] WebSocket connection to 'ws://localhost:8080/socket.io/?EIO=4&transport=websocket' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:8080/node_modules/.vite/deps/socket__io-client.js?v=b72d2020:1062
+[ 7590478ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:8080/:0
+[ 7592471ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:8080/:0
+[ 7593793ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:8080/:0
+[ 7594308ms] [ERROR] WebSocket connection to 'ws://localhost:8080/socket.io/?EIO=4&transport=websocket' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:8080/node_modules/.vite/deps/socket__io-client.js?v=b72d2020:1062
+[ 7595217ms] [LOG] %c %c %c %c %c Phaser v3.90.0 (WebGL | Web Audio) %c https://phaser.io/v390 background: #ff0000 background: #ffff00 background: #00ff00 background: #00ffff color: #ffffff; background: #000000 background: transparent @ http://localhost:8080/node_modules/.vite/deps/phaser.js?v=b72d2020:8455
+[ 7596439ms] [LOG] [Socket] 已连接: cZVY7NphsIf61X_FAAAB @ http://localhost:8080/src/network/SocketManager.js:26

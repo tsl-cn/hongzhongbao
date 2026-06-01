@@ -1,0 +1,56 @@
+[     445ms] [LOG] %c %c %c %c %c Phaser v3.90.0 (WebGL | Web Audio) %c https://phaser.io/v390 background: #ff0000 background: #ffff00 background: #00ff00 background: #00ffff color: #ffffff; background: #000000 background: transparent @ http://localhost:8080/node_modules/.vite/deps/phaser.js?v=b72d2020:8455
+[    1550ms] [LOG] [Socket] 已连接: kgvVWjY7C5IAJLR2AAAH @ http://localhost:8080/src/network/SocketManager.js:26
+[  332716ms] [LOG] %c %c %c %c %c Phaser v3.90.0 (WebGL | Web Audio) %c https://phaser.io/v390 background: #ff0000 background: #ffff00 background: #00ff00 background: #00ffff color: #ffffff; background: #000000 background: transparent @ http://localhost:8080/node_modules/.vite/deps/phaser.js?v=b72d2020:8455
+[  333894ms] [LOG] [Socket] 已连接: c12cMr_9_g1w2uXiAAAL @ http://localhost:8080/src/network/SocketManager.js:26
+[  357910ms] [LOG] %c %c %c %c %c Phaser v3.90.0 (WebGL | Web Audio) %c https://phaser.io/v390 background: #ff0000 background: #ffff00 background: #00ff00 background: #00ffff color: #ffffff; background: #000000 background: transparent @ http://localhost:8080/node_modules/.vite/deps/phaser.js?v=b72d2020:8455
+[  359128ms] [LOG] [Socket] 已连接: IcYULnZFYSP61JbJAAAP @ http://localhost:8080/src/network/SocketManager.js:26
+[  360782ms] [LOG] %c %c %c %c %c Phaser v3.90.0 (WebGL | Web Audio) %c https://phaser.io/v390 background: #ff0000 background: #ffff00 background: #00ff00 background: #00ffff color: #ffffff; background: #000000 background: transparent @ http://localhost:8080/node_modules/.vite/deps/phaser.js?v=b72d2020:8455
+[  362011ms] [LOG] [Socket] 已连接: DxwktNgycBQrU8k3AAAT @ http://localhost:8080/src/network/SocketManager.js:26
+[  370925ms] [LOG] [Socket] 已断开 @ http://localhost:8080/src/network/SocketManager.js:33
+[  372217ms] [ERROR] WebSocket connection to 'ws://localhost:8080/socket.io/?EIO=4&transport=websocket' failed: Connection closed before receiving a handshake response @ http://localhost:8080/node_modules/.vite/deps/socket__io-client.js?v=b72d2020:1062
+[  373711ms] [ERROR] WebSocket connection to 'ws://localhost:8080/socket.io/?EIO=4&transport=websocket' failed: Connection closed before receiving a handshake response @ http://localhost:8080/node_modules/.vite/deps/socket__io-client.js?v=b72d2020:1062
+[  377434ms] [ERROR] WebSocket connection to 'ws://localhost:8080/socket.io/?EIO=4&transport=websocket' failed: Connection closed before receiving a handshake response @ http://localhost:8080/node_modules/.vite/deps/socket__io-client.js?v=b72d2020:1062
+[  382791ms] [LOG] [Socket] 已连接: DBTHBwZIHvwqeSaQAAAB @ http://localhost:8080/src/network/SocketManager.js:26
+[  547707ms] [LOG] %c %c %c %c %c Phaser v3.90.0 (WebGL | Web Audio) %c https://phaser.io/v390 background: #ff0000 background: #ffff00 background: #00ff00 background: #00ffff color: #ffffff; background: #000000 background: transparent @ http://localhost:8080/node_modules/.vite/deps/phaser.js?v=b72d2020:8455
+[  548936ms] [LOG] [Socket] 已连接: uMBu0gMpYhdteT4mAAAH @ http://localhost:8080/src/network/SocketManager.js:26
+[  550849ms] [LOG] %c %c %c %c %c Phaser v3.90.0 (WebGL | Web Audio) %c https://phaser.io/v390 background: #ff0000 background: #ffff00 background: #00ff00 background: #00ffff color: #ffffff; background: #000000 background: transparent @ http://localhost:8080/node_modules/.vite/deps/phaser.js?v=b72d2020:8455
+[  552189ms] [LOG] [Socket] 已连接: ub2GIFBOjq3gNJo3AAAL @ http://localhost:8080/src/network/SocketManager.js:26
+[  562023ms] [LOG] [Socket] 已断开 @ http://localhost:8080/src/network/SocketManager.js:33
+[  562906ms] [ERROR] WebSocket connection to 'ws://localhost:8080/socket.io/?EIO=4&transport=websocket' failed: Connection closed before receiving a handshake response @ http://localhost:8080/node_modules/.vite/deps/socket__io-client.js?v=b72d2020:1062
+[  566010ms] [ERROR] WebSocket connection to 'ws://localhost:8080/socket.io/?EIO=4&transport=websocket' failed: Connection closed before receiving a handshake response @ http://localhost:8080/node_modules/.vite/deps/socket__io-client.js?v=b72d2020:1062
+[  568595ms] [ERROR] WebSocket connection to 'ws://localhost:8080/socket.io/?EIO=4&transport=websocket' failed: Connection closed before receiving a handshake response @ http://localhost:8080/node_modules/.vite/deps/socket__io-client.js?v=b72d2020:1062
+[  573914ms] [LOG] [Socket] 已连接: sVuQdkY9WulIR9Q8AAAD @ http://localhost:8080/src/network/SocketManager.js:26
+[  753820ms] [LOG] %c %c %c %c %c Phaser v3.90.0 (WebGL | Web Audio) %c https://phaser.io/v390 background: #ff0000 background: #ffff00 background: #00ff00 background: #00ffff color: #ffffff; background: #000000 background: transparent @ http://localhost:8080/node_modules/.vite/deps/phaser.js?v=b72d2020:8455
+[  755000ms] [LOG] [Socket] 已连接: 22BbQothlcNJTcISAAAH @ http://localhost:8080/src/network/SocketManager.js:26
+[  762733ms] [LOG] [Socket] 已断开 @ http://localhost:8080/src/network/SocketManager.js:33
+[  763935ms] [ERROR] WebSocket connection to 'ws://localhost:8080/socket.io/?EIO=4&transport=websocket' failed: Connection closed before receiving a handshake response @ http://localhost:8080/node_modules/.vite/deps/socket__io-client.js?v=b72d2020:1062
+[  765584ms] [ERROR] WebSocket connection to 'ws://localhost:8080/socket.io/?EIO=4&transport=websocket' failed: Connection closed before receiving a handshake response @ http://localhost:8080/node_modules/.vite/deps/socket__io-client.js?v=b72d2020:1062
+[  770931ms] [LOG] [Socket] 已连接: I9vzTzJsSEJvR93VAAAB @ http://localhost:8080/src/network/SocketManager.js:26
+[  822550ms] [LOG] %c %c %c %c %c Phaser v3.90.0 (WebGL | Web Audio) %c https://phaser.io/v390 background: #ff0000 background: #ffff00 background: #00ff00 background: #00ffff color: #ffffff; background: #000000 background: transparent @ http://localhost:8080/node_modules/.vite/deps/phaser.js?v=b72d2020:8455
+[  823784ms] [LOG] [Socket] 已连接: LgEovH_FnfYHwKGhAAAF @ http://localhost:8080/src/network/SocketManager.js:26
+[  825422ms] [LOG] %c %c %c %c %c Phaser v3.90.0 (WebGL | Web Audio) %c https://phaser.io/v390 background: #ff0000 background: #ffff00 background: #00ff00 background: #00ffff color: #ffffff; background: #000000 background: transparent @ http://localhost:8080/node_modules/.vite/deps/phaser.js?v=b72d2020:8455
+[  826706ms] [LOG] [Socket] 已连接: -Leggbt3t6MXxGSVAAAJ @ http://localhost:8080/src/network/SocketManager.js:26
+[  840792ms] [LOG] [Socket] 已断开 @ http://localhost:8080/src/network/SocketManager.js:33
+[  842105ms] [ERROR] WebSocket connection to 'ws://localhost:8080/socket.io/?EIO=4&transport=websocket' failed: Connection closed before receiving a handshake response @ http://localhost:8080/node_modules/.vite/deps/socket__io-client.js?v=b72d2020:1062
+[  844605ms] [ERROR] WebSocket connection to 'ws://localhost:8080/socket.io/?EIO=4&transport=websocket' failed: Connection closed before receiving a handshake response @ http://localhost:8080/node_modules/.vite/deps/socket__io-client.js?v=b72d2020:1062
+[  847726ms] [LOG] [Socket] 已连接: exmyP1ihSGZvHDYuAAAB @ http://localhost:8080/src/network/SocketManager.js:26
+[ 1519496ms] [LOG] %c %c %c %c %c Phaser v3.90.0 (WebGL | Web Audio) %c https://phaser.io/v390 background: #ff0000 background: #ffff00 background: #00ff00 background: #00ffff color: #ffffff; background: #000000 background: transparent @ http://localhost:8080/node_modules/.vite/deps/phaser.js?v=b72d2020:8455
+[ 1520755ms] [LOG] [Socket] 已连接: lgZmJPAUjCt9J37CAAAH @ http://localhost:8080/src/network/SocketManager.js:26
+[ 1522548ms] [LOG] %c %c %c %c %c Phaser v3.90.0 (WebGL | Web Audio) %c https://phaser.io/v390 background: #ff0000 background: #ffff00 background: #00ff00 background: #00ffff color: #ffffff; background: #000000 background: transparent @ http://localhost:8080/node_modules/.vite/deps/phaser.js?v=b72d2020:8455
+[ 1523715ms] [LOG] [Socket] 已连接: M2FisTfWkaKXfZlpAAAL @ http://localhost:8080/src/network/SocketManager.js:26
+[ 1532571ms] [LOG] [Socket] 已断开 @ http://localhost:8080/src/network/SocketManager.js:33
+[ 1533865ms] [ERROR] WebSocket connection to 'ws://localhost:8080/socket.io/?EIO=4&transport=websocket' failed: Connection closed before receiving a handshake response @ http://localhost:8080/node_modules/.vite/deps/socket__io-client.js?v=b72d2020:1062
+[ 1536688ms] [ERROR] WebSocket connection to 'ws://localhost:8080/socket.io/?EIO=4&transport=websocket' failed: Connection closed before receiving a handshake response @ http://localhost:8080/node_modules/.vite/deps/socket__io-client.js?v=b72d2020:1062
+[ 1540908ms] [LOG] [Socket] 已连接: 8kbYqPMTdK8pxDPZAAAD @ http://localhost:8080/src/network/SocketManager.js:26
+[ 2426989ms] [LOG] [vite] server connection lost. Polling for restart... @ http://localhost:8080/@vite/client:559
+[ 2426990ms] [LOG] [Socket] 已断开 @ http://localhost:8080/src/network/SocketManager.js:33
+[ 2427585ms] [LOG] %c %c %c %c %c Phaser v3.90.0 (WebGL | Web Audio) %c https://phaser.io/v390 background: #ff0000 background: #ffff00 background: #00ff00 background: #00ffff color: #ffffff; background: #000000 background: transparent @ http://localhost:8080/node_modules/.vite/deps/phaser.js?v=b72d2020:8455
+[ 2428463ms] [LOG] [Socket] 已连接: H2ylLP3amva5-hQNAAAJ @ http://localhost:8080/src/network/SocketManager.js:26
+[ 2431259ms] [LOG] %c %c %c %c %c Phaser v3.90.0 (WebGL | Web Audio) %c https://phaser.io/v390 background: #ff0000 background: #ffff00 background: #00ff00 background: #00ffff color: #ffffff; background: #000000 background: transparent @ http://localhost:8080/node_modules/.vite/deps/phaser.js?v=b72d2020:8455
+[ 2431684ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:8080/src/scenes/GameScene.js?t=1780146668418:0
+[ 2442267ms] [LOG] %c %c %c %c %c Phaser v3.90.0 (WebGL | Web Audio) %c https://phaser.io/v390 background: #ff0000 background: #ffff00 background: #00ff00 background: #00ffff color: #ffffff; background: #000000 background: transparent @ http://localhost:8080/node_modules/.vite/deps/phaser.js?v=b72d2020:8455
+[ 2443323ms] [LOG] [Socket] 已连接: ph-Q71AXQeiBghryAAAN @ http://localhost:8080/src/network/SocketManager.js?t=1780146668352:26
+[ 2469350ms] [LOG] [vite] server connection lost. Polling for restart... @ http://localhost:8080/@vite/client:559
+[ 2469354ms] [LOG] [Socket] 已断开 @ http://localhost:8080/src/network/SocketManager.js?t=1780146668352:33
+[ 2470082ms] [LOG] %c %c %c %c %c Phaser v3.90.0 (WebGL | Web Audio) %c https://phaser.io/v390 background: #ff0000 background: #ffff00 background: #00ff00 background: #00ffff color: #ffffff; background: #000000 background: transparent @ http://localhost:8080/node_modules/.vite/deps/phaser.js?v=b72d2020:8455
+[ 2471275ms] [LOG] [Socket] 已连接: XUGwr6ETSEpUrTNSAAAR @ http://localhost:8080/src/network/SocketManager.js:26

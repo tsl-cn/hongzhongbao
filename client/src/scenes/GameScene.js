@@ -33,6 +33,7 @@ export default class GameScene extends Phaser.Scene {
     this.lastDrawTile = null;     // 刚摸的牌（放在最右边显示）
     this._lastClickTime = 0;      // 双击检测
     this._lastClickIdx = -1;
+    this._lastPlayers = null;     // 清空上一局牌河缓存
     this._roundStarted = false;   // 牌局未开始，手牌背面
     this._handBounds = {};        // 手牌边界信息（供碰杠牌定位）
 
@@ -75,9 +76,7 @@ export default class GameScene extends Phaser.Scene {
       fontSize: '16px', color: '#ffd700', fontStyle: 'bold', padding: { top: 2, bottom: 1 },
     }).setOrigin(0.5).setDepth(10);
 
-    this.wallText = this.add.text(W - 48, 48, '', {
-      fontSize: '28px', color: '#ff8800', fontStyle: 'bold', padding: { top: 2, bottom: 1 },
-    }).setOrigin(1, 0);
+    // wallText 已移除（牌局日志不显示牌墙剩余）
 
     this.hintText = this.add.text(W / 2, H - 12, '', {
       fontSize: '16px', color: '#dddddd', padding: { top: 2, bottom: 1 },
@@ -222,14 +221,14 @@ export default class GameScene extends Phaser.Scene {
           const totalStr = `${total > 0 ? '+' : ''}${total}`;
           let tx = x, ty = y;
           if (rel === 0) {
-            // 玩家：左移0.3牌位 (54*0.3≈16)
-            tx = x - 71; ty = y;
-          } else if (rel === 2) {
-            // 对家：风位字左边移1.5牌位再右移1牌位
+            // 自己：左移0.2牌位≈11px (累计 -71→-82)
             tx = x - 82; ty = y;
+          } else if (rel === 2) {
+            // 对家：左移1牌位≈54px (累计 -82→-136)
+            tx = x - 136; ty = y;
           } else if (rel === 1) {
-            // 右边家：风位字上方再左移1牌位，右移0.7牌位
-            tx = x - 4; ty = y - 22;
+            // 右家：左移0.2牌位≈11px (累计 -4→-15)
+            tx = x - 15; ty = y - 22;
           } else {
             // 左边家：风位字上方0.3牌位
             tx = x; ty = y - 22;
@@ -517,27 +516,27 @@ export default class GameScene extends Phaser.Scene {
       if (!count || count <= 0) return;
       const rel = (seatIdx - this.mySeat + 4) % 4;
       const hb = this._handBounds && this._handBounds[rel];
-      const hh = Math.floor(0.5 * hH); // 0.5牌位
 
-      let startX, startY, dirX, dirY;
+      let startX, startY, dirX, dirY, angle = 0;
       if (rel === 0) {
-        // 自己：原位不变
+        // 自己：不变
         startX = 148; startY = H - 27; dirX = 1; dirY = 0;
       } else if (rel === 3 && hb) {
-        // 左边家：右移1牌位，上移1.5牌位，左移1.5牌位，缩0.8倍，紧挨竖排
-        startX = hb.x - hb.oW / 2 - hh + 3 * hW - Math.floor(1.5 * hW) + hW;
-        startY = hb.topY - hb.oH / 2 - hh - Math.floor(1.5 * hH); dirX = 0; dirY = 1;
+        // 左家：手牌同一竖列上方，间隔1牌位，方向与手牌一致
+        startX = hb.x;
+        startY = hb.topY - hH - count * hH - (count - 1) * hGap;
+        dirX = 0; dirY = 1; angle = 90;
       } else if (rel === 1 && hb) {
-        // 右边家：下移1牌位，右移1.5牌位，逆时针90度，竖列
-        startX = hb.x + hb.oW / 2 + hh - 3 * hW + Math.floor(1.5 * hW) + Math.floor(0.8 * hW);
-        startY = hb.bottomY + hh + hH; dirX = 0; dirY = 1;
+        // 右家：手牌同一竖列下方，间隔1牌位，方向与手牌一致
+        startX = hb.x;
+        startY = hb.bottomY + hH + hH / 2;
+        dirX = 0; dirY = 1; angle = -90;
       } else if (rel === 2 && hb) {
-        // 对家：上移1牌位，右移1牌位，缩0.8倍，紧挨横排
-        startX = hb.rightX + hh + 2 * hW;
-        startY = hb.y - hb.oH / 2 - hh + Math.floor(0.5 * hH);
-        dirX = -1; dirY = 0;
+        // 对家：手牌同一横排右侧，间隔1牌位
+        startX = hb.rightX + hW;
+        startY = hb.y;
+        dirX = 1; dirY = 0;
       } else {
-        // 后备
         startX = 0; startY = 0; dirX = 0; dirY = 0;
       }
 
@@ -546,8 +545,7 @@ export default class GameScene extends Phaser.Scene {
         const hy = startY + h * (hH + hGap) * dirY;
         const tile = TileRenderer.createTile(this, 0, hx, hy, hW, hH, true);
         tile.setDepth(5).setAlpha(0.9).setScale(0.8);
-        // 右家/左家马牌逆时针旋转90度
-        if (rel === 1 || rel === 3) tile.setAngle(-90);
+        if (angle !== 0) tile.setAngle(angle);
         this.horseTiles.push(tile);
       }
     });
@@ -1017,8 +1015,6 @@ export default class GameScene extends Phaser.Scene {
 
     this.socket.on('game_state_update', (data) => {
       const state = data.state;
-      this.wallText.setText(`剩余: ${state.wallRemaining}张`);
-
       // 更新牌局日志
       if (state.gameLog) this._updateLogDisplay(state.gameLog);
 
@@ -1379,20 +1375,21 @@ export default class GameScene extends Phaser.Scene {
           labelOriginX = 0;
         }
 
-        // 昵称
-        this.add.text(labelX, labelY, `${p.name}`, {
-          fontSize: '13px', color: labelColor,
+        // 昵称（放大2倍+粗体，下移0.2牌位≈14px，加padding防裁切）
+        this.add.text(labelX, labelY + 14, `${p.name}`, {
+          fontSize: '26px', color: labelColor, fontStyle: 'bold',
+          padding: { top: 4, bottom: 4, left: 2, right: 2 },
         }).setOrigin(labelOriginX, 0.5).setDepth(depthBase + 1);
 
-        // 累计输赢（同排不遮挡 / 同列固定间距）
+        // 累计输赢（同排不遮挡 / 同列固定间距，下移0.2牌位）
         if (this.game.cumulativeStats && this.game.cumulativeStats[p.name]) {
           const total = this.game.cumulativeStats[p.name].total;
           const totalColor = total > 0 ? '#44ff44' : total < 0 ? '#ff4444' : '#aaaaaa';
           const totalStr = `${total > 0 ? '+' : ''}${total}番`;
-          let statsX = labelX, statsY = labelY;
-          if (rel === 0) { statsX = labelX + 80; statsY = labelY; }
-          else if (rel === 2) { statsX = labelX - 80; statsY = labelY; }
-          else { statsX = labelX; statsY = labelY + 36; }
+          let statsX = labelX, statsY = labelY + 14;
+          if (rel === 0) { statsX = labelX + 80; statsY = labelY + 14; }
+          else if (rel === 2) { statsX = labelX - 80; statsY = labelY + 14; }
+          else { statsX = labelX; statsY = labelY + 36 + 14; }
           this.add.text(statsX, statsY, totalStr, {
             fontSize: '24px', color: totalColor, fontStyle: 'bold',
           }).setOrigin(labelOriginX, 0.5).setDepth(depthBase + 1);
