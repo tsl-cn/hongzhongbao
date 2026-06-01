@@ -9,10 +9,48 @@
     html, body { width: 100%; height: 100%; overflow: hidden; background: #1a1a2e; }
     #game-container { width: 100%; height: 100%; }
     canvas { display: block; }
+
+    /* 手机强制横屏提示 */
+    #rotate-hint {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: #0d1b1e;
+      color: #ffd700;
+      font-size: 22px;
+      text-align: center;
+      justify-content: center;
+      align-items: center;
+      flex-direction: column;
+      z-index: 9999;
+      padding: 40px;
+    }
+    #rotate-hint .icon { font-size: 64px; margin-bottom: 20px; animation: rotate-phone 2s ease-in-out infinite; }
+    @keyframes rotate-phone {
+      0%, 100% { transform: rotate(0deg); }
+      50% { transform: rotate(90deg); }
+    }
+    @media (orientation: portrait) and (max-width: 768px) {
+      #rotate-hint { display: flex; }
+      #game-container { display: none; }
+    }
   </style>
 </head>
 <body>
+  <!-- 手机横屏提示 -->
+  <div id="rotate-hint">
+    <div class="icon">📱</div>
+    <div>请将手机旋转至<strong>横屏</strong>模式</div>
+    <div style="font-size:14px;color:#aaa;margin-top:12px">旋转手机后自动进入游戏</div>
+  </div>
+
   <div id="game-container"></div>
   <script type="module" src="/src/main.js"></script>
+  <script>
+    // 尝试锁定横屏（Screen Orientation API）
+    if (screen.orientation && screen.orientation.lock) {
+      screen.orientation.lock('landscape').catch(() => {});
+    }
+  </script>
 </body>
 </html>

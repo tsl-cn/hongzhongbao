@@ -521,8 +521,8 @@ export default class LobbyScene extends Phaser.Scene {
     }).setOrigin(0.5).setAlpha(0.5));
 
     // ---- 分享房间按钮（中字正下方） ----
-    this._makeSmallBtn(CX, CY + 35, '📋 分享房间', 0x3a6a4e, () => {
-      this._copyRoomInfo(roomData);
+    this._makeSmallBtn(CX, CY + 35, '📋 分享房间', 0x3a6a4e, async () => {
+      await this._copyRoomInfo(roomData);
     });
 
     // ---- 四个座位卡 ----
@@ -759,10 +759,34 @@ export default class LobbyScene extends Phaser.Scene {
   }
 
   // ============================================================
+  //  获取本机局域网 IP（通过 WebRTC）
+  // ============================================================
+
+  /** 尝试获取本机局域网 IP，失败返回 null */
+  _getLocalIP() {
+    return new Promise((resolve) => {
+      try {
+        const pc = new RTCPeerConnection({ iceServers: [] });
+        pc.createDataChannel('');
+        pc.createOffer().then(offer => pc.setLocalDescription(offer));
+        pc.onicecandidate = (e) => {
+          if (!e.candidate) { resolve(null); return; }
+          const match = e.candidate.candidate.match(/(\d+\.\d+\.\d+\.\d+)/);
+          if (match && !match[1].startsWith('127.')) {
+            pc.close();
+            resolve(match[1]);
+          }
+        };
+        setTimeout(() => { pc.close(); resolve(null); }, 2000);
+      } catch { resolve(null); }
+    });
+  }
+
+  // ============================================================
   //  分享房间信息到剪贴板
   // ============================================================
 
-  _copyRoomInfo(roomData) {
+  async _copyRoomInfo(roomData) {
     const isPassword = roomData.hasPassword;
 
     // 查找真实密码（从创建时的输入或已存信息）
@@ -775,34 +799,43 @@ export default class LobbyScene extends Phaser.Scene {
     // 用占位提示让房主手动填写
     const passStr = isPassword ? `密码: ${password || '(已设置密码，请手动填写)'}\n` : '';
 
-    // 构造分享文本
-    const host = window.location.host; // localhost:8080
+    // 构造分享文本 — 动态获取本机局域网 IP
+    const host = window.location.host;
     const roomLink = `http://${host}?room=${roomData.id}` + (password ? `&password=${encodeURIComponent(password)}` : '');
+
+    // 尝试获取本机局域网 IP（手机同 Wi-Fi 可用）
+    const localIP = await this._getLocalIP();
+    const mobileHost = localIP ? `${localIP}:8080` : '〈你的局域网IP〉:8080';
+    const mobileLink = `http://${mobileHost}?room=${roomData.id}` + (password ? `&password=${encodeURIComponent(password)}` : '');
+
     const shareText =
 `🀄 红中宝自摸麻将 - 房间 ${roomData.id}
-${roomLink}
+电脑: ${roomLink}
+手机: ${mobileLink}
 ${passStr}点击链接自动加入房间，等待开局！`;
 
     // 复制到剪贴板
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(shareText).then(() => {
-        // 复制成功反馈
-        this._showToast('✅ 房间信息已复制，发送给好友吧！');
-      }).catch(() => {
-        this._showToast('❌ 复制失败，请手动复制房间号');
-      });
-    } else {
+    const doCopy = (text) => {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        return navigator.clipboard.writeText(text);
+      }
       // 降级方案
       const textarea = document.createElement('textarea');
-      textarea.value = shareText;
+      textarea.value = text;
       textarea.style.position = 'fixed';
       textarea.style.opacity = '0';
       document.body.appendChild(textarea);
       textarea.select();
       document.execCommand('copy');
       document.body.removeChild(textarea);
-      this._showToast('✅ 房间信息已复制');
-    }
+      return Promise.resolve();
+    };
+
+    doCopy(shareText).then(() => {
+      this._showToast('✅ 房间信息已复制，发送给好友吧！');
+    }).catch(() => {
+      this._showToast('❌ 复制失败，请手动复制房间号');
+    });
   }
 
   /** 短暂显示提示文字（Toast） */

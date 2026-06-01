@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "红中宝自摸麻将 - 客户端",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --host",
     "build": "vite build",
     "preview": "vite preview"
   },
