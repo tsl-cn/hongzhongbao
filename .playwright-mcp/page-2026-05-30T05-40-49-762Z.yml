@@ -1,3 +1,0 @@
-- generic [active] [ref=e1]:
-  - textbox "输入昵称" [ref=e4]
-  - textbox "房间密码（可选）" [ref=e5]

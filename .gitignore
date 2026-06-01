@@ -7,3 +7,7 @@ Thumbs.db
 screenshot-*.png
 verify-*.mjs
 .reasonix/
+.playwright-mcp/
+current-page.png
+hongzhongbao.zip
+make-zip.js
