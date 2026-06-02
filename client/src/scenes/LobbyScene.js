@@ -529,7 +529,9 @@ export default class LobbyScene extends Phaser.Scene {
     this.inRoom = true;
     this.roomId = roomData.id;
     this.isHost = (roomData.hostId === this.socket.playerId);
-    this.isReady = false;
+    // 从服务端恢复自己的准备状态
+    const myPlayer = (roomData.players || []).find(p => p.id === this.socket.playerId);
+    this.isReady = myPlayer ? myPlayer.isReady : false;
 
     // 隐藏大厅视图
     this.lobbyContainer.setVisible(false);
@@ -727,12 +729,19 @@ export default class LobbyScene extends Phaser.Scene {
     this.unreadyBtn.setVisible(false);
     rc.add(this.unreadyBtn);
 
-    // 开始游戏（仅房主）
+    // 开始游戏（仅房主+所有人都准备后可见）
+    const humans = (roomData.players || []).filter(p => !p.isAI);
+    const allHumansReady = humans.length > 0 && humans.every(p => p.isReady);
+    const me = humans.find(p => p.id === this.socket.playerId);
+    const hostIsReady = me ? me.isReady : false;
+
     this.startBtn = this._makeSmallBtn(CX + 100, 580, '▶ 开始游戏', 0x4a7a5e, () => {
       this.socket.emit('host_start_game');
       if (this.startBtn) this.startBtn.setAlpha(0.5);
     });
-    if (!this.isHost) this.startBtn.setVisible(false);
+    // 房主 + 自己已准备 + 所有人已准备 → 显示开始按钮
+    const showStart = this.isHost && hostIsReady && allHumansReady;
+    this.startBtn.setVisible(showStart);
     rc.add(this.startBtn);
   }
 
@@ -957,6 +966,13 @@ ${passStr}点击链接自动加入房间，等待开局！`;
 
     this.socket.on('player_ready_update', (roomData) => {
       if (this.inRoom) {
+        this._updateRoomPlayers(roomData);
+      }
+    });
+
+    this.socket.on('host_transferred', (roomData) => {
+      if (this.inRoom) {
+        this._showToast('👑 你已成为新房主！');
         this._updateRoomPlayers(roomData);
       }
     });

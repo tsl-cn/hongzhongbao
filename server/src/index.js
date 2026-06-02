@@ -60,10 +60,18 @@ io.on('connection', (socket) => {
   });
 
   socket.on('leave_room', (data) => {
-    const room = roomManager.leaveRoom(socket.id);
-    if (room) {
-      socket.leave(room.id);
-      io.to(room.id).emit('player_left', roomManager.getRoomInfo(room.id));
+    const result = roomManager.leaveRoom(socket.id);
+    if (!result) return; // 房间已关闭
+
+    const room = result;
+    socket.leave(room.id);
+
+    const roomInfo = roomManager.getRoomInfo(room.id);
+    io.to(room.id).emit('player_left', roomInfo);
+
+    // 房主已转移，通知新房主
+    if (room.newHostId) {
+      io.to(room.newHostId).emit('host_transferred', roomInfo);
     }
   });
 
@@ -87,12 +95,9 @@ io.on('connection', (socket) => {
       socket.emit('error', { message: '只有房主可以开始游戏' });
       return;
     }
-    // 填充AI并自动准备
-    roomManager.fillWithAI(room.id);
-    room.players.forEach(p => { if (p.isAI) p.isReady = true; });
-    // 检查所有真人是否已准备
-    if (!roomManager.allHumansReady(room.id)) {
-      socket.emit('error', { message: '还有玩家未准备' });
+    const check = roomManager.canStartGame(room.id);
+    if (!check.ok) {
+      socket.emit('error', { message: check.error });
       return;
     }
     startGame(room.id);
@@ -199,9 +204,15 @@ io.on('connection', (socket) => {
   // ---- 断开连接 ----
   socket.on('disconnect', () => {
     console.log(`[断开] ${socket.id} 已断开`);
-    const room = roomManager.leaveRoom(socket.id);
-    if (room) {
-      io.to(room.id).emit('player_left', { playerId: socket.id });
+    const result = roomManager.leaveRoom(socket.id);
+    if (!result) return; // 房间已关闭
+
+    const room = result;
+    const roomInfo = roomManager.getRoomInfo(room.id);
+    io.to(room.id).emit('player_left', roomInfo);
+
+    if (room.newHostId) {
+      io.to(room.newHostId).emit('host_transferred', roomInfo);
     }
   });
 });

@@ -72,18 +72,28 @@ class RoomManager {
     const room = this.rooms.get(roomId);
     if (!room) return null;
 
+    // 房主在等待页面离开时，转移房主给下一个真人
+    let newHostId = null;
+    if (room.status === 'waiting' && playerId === room.hostId) {
+      const nextHost = room.players.find(p => !p.isAI && p.id !== playerId);
+      if (nextHost) {
+        room.hostId = nextHost.id;
+        newHostId = nextHost.id;
+      }
+    }
+
     // 移除玩家
     const idx = room.players.findIndex(p => p.id === playerId);
     if (idx !== -1) {
       room.players.splice(idx, 1);
-      // 重新分配座位号
       room.players.forEach((p, i) => p.seatIndex = i);
     }
 
     this.playerRoom.delete(playerId);
 
-    // 如果房间空了，删除房间
-    if (room.players.length === 0) {
+    // 没有真人了 → 关闭房间（AI 全部移除）
+    const hasHumans = room.players.some(p => !p.isAI);
+    if (!hasHumans) {
       this.rooms.delete(roomId);
       return null;
     }
@@ -93,6 +103,7 @@ class RoomManager {
       this.fillWithAI(roomId);
     }
 
+    room.newHostId = newHostId;
     return room;
   }
 
@@ -122,6 +133,27 @@ class RoomManager {
     return room.players
       .filter(p => !p.isAI)
       .every(p => p.isReady);
+  }
+
+  /** 检查是否可以开始游戏 */
+  canStartGame(roomId) {
+    const room = this.rooms.get(roomId);
+    if (!room) return { ok: false, error: '房间不存在' };
+    if (room.status !== 'waiting') return { ok: false, error: '游戏已开始' };
+
+    const humans = room.players.filter(p => !p.isAI);
+    if (humans.length === 0) return { ok: false, error: '没有真人玩家' };
+
+    // 房主必须已准备
+    const host = humans.find(p => p.id === room.hostId);
+    if (!host || !host.isReady) return { ok: false, error: '房主尚未准备' };
+
+    // 所有真人必须已准备
+    if (!humans.every(p => p.isReady)) {
+      return { ok: false, error: '还有玩家未准备' };
+    }
+
+    return { ok: true };
   }
 
   /** 玩家准备 */
