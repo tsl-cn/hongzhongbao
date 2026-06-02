@@ -642,6 +642,14 @@ function _broadcastGameState(room, result) {
         }
         horseResults[i].pickerAdjustment = directAdj + crossTerm;
       }
+      // 校验：马牌结算总和必须为0
+      let horseTotal = 0;
+      for (let i = 0; i < 4; i++) {
+        if (horseResults[i]) horseTotal += horseResults[i].pickerAdjustment;
+      }
+      if (horseTotal !== 0) {
+        console.error(`🚨 马牌结算不平衡! total=${horseTotal}, fan=${fan}, winner=${winner}`);
+      }
     }
     _broadcastToRoom(room.id, 'game_over', {
       result: state.result,

@@ -10,6 +10,7 @@
  */
 
 import Phaser from 'phaser';
+import { getTheme, color as tc, font as tf, onThemeChange, switchTheme } from '../game/ThemeManager.js';
 
 // UI 尺寸常量
 const W = 1066;
@@ -65,12 +66,13 @@ export default class LobbyScene extends Phaser.Scene {
   // ============================================================
 
   _drawBackground() {
+    const cols = getTheme().colors;
     // 主背景
-    this.add.rectangle(CX, CY, W, H, 0x1a3a2e);
+    this.add.rectangle(CX, CY, W, H, cols.background);
 
     // 装饰性淡色风字（四角对称）
-    const decorStyle = { fontSize: '72px', color: '#1f4436', fontStyle: 'bold' };
-    const decorAlpha = 0.25;
+    const decorStyle = { fontSize: '72px', color: '#' + cols.accent.toString(16).padStart(6, '0'), fontStyle: 'bold' };
+    const decorAlpha = 0.15;
     const decors = [
       { text: '東', x: 50, y: 50 },
       { text: '南', x: W - 50, y: 50 },
@@ -85,7 +87,7 @@ export default class LobbyScene extends Phaser.Scene {
 
     // 底部暗纹纹理线
     const gfx = this.add.graphics();
-    gfx.lineStyle(1, 0x2a5a3e, 0.3);
+    gfx.lineStyle(1, cols.tableBg, 0.2);
     for (let i = 0; i < W; i += 40) {
       gfx.lineBetween(i, 0, i, H);
     }
@@ -96,19 +98,20 @@ export default class LobbyScene extends Phaser.Scene {
   // ============================================================
 
   _createTitle() {
+    const f = getTheme().fonts;
     // 标题阴影
     this.add.text(CX + 2, 32, '🀄 红中宝自摸麻将', {
-      fontSize: '38px', color: '#00000066', fontStyle: 'bold',
+      fontSize: f.title.fontSize, color: '#00000044', fontStyle: 'bold',
       padding: { top: 4, bottom: 2 },
     }).setOrigin(0.5);
     // 标题
     this.add.text(CX, 30, '🀄 红中宝自摸麻将', {
-      fontSize: '38px', color: '#ffd700', fontStyle: 'bold',
+      fontSize: f.title.fontSize, color: f.title.color, fontFamily: f.title.fontFamily, fontStyle: 'bold',
       padding: { top: 4, bottom: 2 },
     }).setOrigin(0.5);
     // 副标题
     this.add.text(CX, 70, '四人联网 · 三番起胡 · 买马', {
-      fontSize: '14px', color: '#88aa88',
+      fontSize: '14px', color: '#' + getTheme().colors.textDark.toString(16).padStart(6, '0'),
     }).setOrigin(0.5);
   }
 
@@ -121,7 +124,7 @@ export default class LobbyScene extends Phaser.Scene {
 
     // ---- 昵称输入（Phaser DOM） ----
     cv.add(this.add.text(CX - 160, 115, '🧑 昵称:', {
-      fontSize: '18px', color: '#ffffff',
+      fontSize: '18px', color: '#' + getTheme().colors.text.toString(16).padStart(6, '0'),
       padding: { top: 3, bottom: 1 },
     }).setOrigin(0, 0.5));
 
@@ -133,9 +136,12 @@ export default class LobbyScene extends Phaser.Scene {
     }).setOrigin(0.5);
     cv.add(this.statusText);
 
+    // ---- 主题切换 ----
+    this._createThemeToggle();
+
     // ---- 按钮行 ----
-    this._makeButton(CX - 100, 200, 180, 40, '创建房间', 0x4a7a5e, () => this._showCreateDialog());
-    this._makeButton(CX + 100, 200, 180, 40, '🔄 刷新列表', 0x3a5a4e, () => this._refreshList());
+    this._makeButton(CX - 100, 200, 180, 40, '创建房间', 0, () => this._showCreateDialog());
+    this._makeButton(CX + 100, 200, 180, 40, '🔄 刷新列表', 0, () => this._refreshList());
 
     // ---- 房间列表标题 ----
     cv.add(this.add.text(CX, 245, '─ 等待中的房间 ─', {
@@ -147,21 +153,64 @@ export default class LobbyScene extends Phaser.Scene {
     cv.add(this.roomItemsContainer);
   }
 
+  _createThemeToggle() {
+    const cols = getTheme().colors;
+    const themes = [
+      { id: 'classic', label: '🏮' },
+      { id: 'modern', label: '🎯' },
+      { id: 'gamey', label: '🎮' },
+    ];
+    const currentId = getTheme().id;
+    const btnW = 34, btnH = 34, gap = 4;
+    const startX = CX + 420;
+    const y = 30;
+
+    themes.forEach((t, i) => {
+      const x = startX + i * (btnW + gap);
+      const isActive = t.id === currentId;
+
+      const bg = this.add.graphics();
+      bg.fillStyle(isActive ? cols.primary : cols.buttonBg, 1);
+      bg.fillRoundedRect(x - btnW / 2, y - btnH / 2, btnW, btnH, 6);
+      if (isActive) {
+        bg.lineStyle(2, cols.accentLight, 1);
+        bg.strokeRoundedRect(x - btnW / 2, y - btnH / 2, btnW, btnH, 6);
+      }
+      this.lobbyContainer.add(bg);
+
+      const hit = this.add.rectangle(x, y, btnW, btnH, 0x000000, 0)
+        .setInteractive({ useHandCursor: true });
+      hit.on('pointerdown', () => {
+        switchTheme(t.id);
+        this.scene.restart();
+      });
+      this.lobbyContainer.add(hit);
+
+      const label = this.add.text(x, y, t.label, { fontSize: '16px' }).setOrigin(0.5);
+      this.lobbyContainer.add(label);
+    });
+  }
+
   _createNameInput() {
+    const cols = getTheme().colors;
     const inputEl = document.createElement('input');
     inputEl.type = 'text';
     inputEl.placeholder = '输入昵称';
     inputEl.value = '';
+    const borderHex = '#' + cols.inputBorder.toString(16).padStart(6, '0');
+    const bgHex = '#' + cols.inputBg.toString(16).padStart(6, '0');
+    const textHex = '#' + cols.text.toString(16).padStart(6, '0');
+    const accentHex = '#' + cols.accent.toString(16).padStart(6, '0');
     inputEl.style.cssText = `
       width: 200px; height: 34px;
       padding: 6px 14px;
       font-size: 17px;
-      background: #2a4a3e;
-      color: #ffd700;
-      border: 1px solid #4a7a5e;
+      background: ${bgHex};
+      color: ${accentHex};
+      border: 1px solid ${borderHex};
       border-radius: 6px;
       outline: none;
-      caret-color: #ffd700;
+      caret-color: ${accentHex};
       font-family: inherit;
     `;
     const domInput = this.add.dom(CX + 70, 115, inputEl);
@@ -692,20 +741,37 @@ export default class LobbyScene extends Phaser.Scene {
   // ============================================================
 
   _makeButton(x, y, w, h, label, color, callback) {
+    const cols = getTheme().colors;
     const cv = this.lobbyContainer;
     const r = 8;
     const bg = this.add.graphics();
-    bg.fillStyle(color, 1);
+    bg.fillStyle(cols.buttonBg, 1);
     bg.fillRoundedRect(x - w / 2, y - h / 2, w, h, r);
+    bg.lineStyle(2, cols.panelBorder, 1);
+    bg.strokeRoundedRect(x - w / 2, y - h / 2, w, h, r);
     cv.add(bg);
 
     const hit = this.add.rectangle(x, y, w, h, 0x000000, 0)
       .setInteractive({ useHandCursor: true });
     hit.on('pointerdown', callback);
+    hit.on('pointerover', () => {
+      bg.clear();
+      bg.fillStyle(cols.buttonHover, 1);
+      bg.fillRoundedRect(x - w / 2, y - h / 2, w, h, r);
+      bg.lineStyle(2, cols.accentLight, 1);
+      bg.strokeRoundedRect(x - w / 2, y - h / 2, w, h, r);
+    });
+    hit.on('pointerout', () => {
+      bg.clear();
+      bg.fillStyle(cols.buttonBg, 1);
+      bg.fillRoundedRect(x - w / 2, y - h / 2, w, h, r);
+      bg.lineStyle(2, cols.panelBorder, 1);
+      bg.strokeRoundedRect(x - w / 2, y - h / 2, w, h, r);
+    });
     cv.add(hit);
 
     const text = this.add.text(x, y, label, {
-      fontSize: '16px', color: '#ffffff', fontStyle: 'bold',
+      fontSize: '16px', color: '#' + cols.buttonText.toString(16).padStart(6, '0'), fontStyle: 'bold',
     }).setOrigin(0.5);
     cv.add(text);
   }
@@ -736,12 +802,15 @@ export default class LobbyScene extends Phaser.Scene {
 
   /** 大号按钮（2倍大小） */
   _makeLargeBtn(x, y, label, color, callback) {
+    const cols = getTheme().colors;
     const container = this.add.container(x, y);
     const w = 200, h = 48, r = 10;
 
     const bg = this.add.graphics();
-    bg.fillStyle(color, 1);
+    bg.fillStyle(color || cols.buttonBg, 1);
     bg.fillRoundedRect(-w / 2, -h / 2, w, h, r);
+    bg.lineStyle(2, cols.panelBorder, 1);
+    bg.strokeRoundedRect(-w / 2, -h / 2, w, h, r);
     container.add(bg);
 
     const hit = this.add.rectangle(0, 0, w, h, 0x000000, 0)
@@ -750,7 +819,7 @@ export default class LobbyScene extends Phaser.Scene {
     container.add(hit);
 
     const text = this.add.text(0, 0, label, {
-      fontSize: '20px', color: '#ffffff', fontStyle: 'bold',
+      fontSize: '20px', color: '#' + cols.buttonText.toString(16).padStart(6, '0'), fontStyle: 'bold',
       padding: { top: 3, bottom: 1 },
     }).setOrigin(0.5);
     container.add(text);

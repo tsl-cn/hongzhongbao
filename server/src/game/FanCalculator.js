@@ -33,13 +33,15 @@ class FanCalculator {
       typePatterns = [{ name: '4红中', fan: 8, desc: '手牌有4张红中万能牌，直接胡' }];
     } else if (winResult.type === 'sevenPairs') {
       typePatterns = FanCalculator._calcSevenPairFans(hand);
+    } else if (winResult.type === 'thirteenOrphans') {
+      typePatterns = [{ name: '十三幺', fan: 20, desc: '13种幺九牌各1张+任意1对' }];
     } else {
       typePatterns = FanCalculator._calcStandardFans(hand, melds, winResult);
     }
 
-    // 花色 + 幺九（仅非fourWilds时有效，fourWilds时这些无意义）
+    // 花色 + 幺九（仅非fourWilds/thirteenOrphans时有效）
     let suitTerminalPatterns = [];
-    if (winResult.type !== 'fourWilds') {
+    if (winResult.type !== 'fourWilds' && winResult.type !== 'thirteenOrphans') {
       suitTerminalPatterns = [
         ...FanCalculator._calcSuitFans(hand, melds),
         ...FanCalculator._calcTerminalHonorFans(hand, melds),
@@ -60,18 +62,26 @@ class FanCalculator {
         typeB = 'standard';
         typePatternsB = FanCalculator._calcStandardFans(hand, melds, stdResult);
       } else {
-        const spResult = FanCalculator._checkSevenPairs(hand);
-        if (spResult.isWin) {
-          typeB = 'sevenPairs';
-          typePatternsB = FanCalculator._calcSevenPairFans(hand);
+        const toResult = FanCalculator._checkThirteenOrphans(hand);
+        if (toResult.isWin) {
+          typeB = 'thirteenOrphans';
+          typePatternsB = [{ name: '十三幺', fan: 20, desc: '13种幺九牌各1张+任意1对' }];
         } else {
-          typeB = null;
-          typePatternsB = [];
+          const spResult = FanCalculator._checkSevenPairs(hand);
+          if (spResult.isWin) {
+            typeB = 'sevenPairs';
+            typePatternsB = FanCalculator._calcSevenPairFans(hand);
+          } else {
+            typeB = null;
+            typePatternsB = [];
+          }
         }
       }
 
       if (typeB) {
-        const suitB = [...FanCalculator._calcSuitFans(hand, melds), ...FanCalculator._calcTerminalHonorFans(hand, melds)];
+        const suitB = (typeB === 'thirteenOrphans')
+          ? []
+          : [...FanCalculator._calcSuitFans(hand, melds), ...FanCalculator._calcTerminalHonorFans(hand, melds)];
         const patternsB = [...shared, ...typePatternsB, ...suitB];
         const resolvedB = FanCalculator._resolveOverlaps(patternsB);
         const fanB = FanCalculator._computeFan(resolvedB, shared._multiplier || 1);
@@ -173,7 +183,7 @@ class FanCalculator {
 
   /**
    * 判断手牌是否能胡（含红中万能牌）
-   * 返回 { isWin, type: 'standard'|'sevenPairs', combinations? }
+   * 返回 { isWin, type: 'standard'|'sevenPairs'|'thirteenOrphans', combinations? }
    */
   static checkWin(hand) {
     // 四红中：4张红中直接胡（含非庄家13张）
@@ -181,6 +191,12 @@ class FanCalculator {
     if (wildCount >= 4) {
       // 红中万能牌，4张红中可配成任意牌型
       return { isWin: true, type: 'fourWilds' };
+    }
+
+    // 检查十三幺
+    const thirteenResult = FanCalculator._checkThirteenOrphans(hand);
+    if (thirteenResult.isWin) {
+      return { isWin: true, type: 'thirteenOrphans', ...thirteenResult };
     }
 
     // 先检查七小对
@@ -193,6 +209,73 @@ class FanCalculator {
     const standardResult = FanCalculator._checkStandard(hand);
     if (standardResult.isWin) {
       return { isWin: true, type: 'standard', ...standardResult };
+    }
+
+    return { isWin: false };
+  }
+
+  /**
+   * 十三幺所需的13种幺九牌（不含红中，红中为万能牌）
+   * 1万/9万/1筒/9筒/1条/9条 + 东南西北发白
+   */
+  static get THIRTEEN_YAO_TYPES() {
+    return [0, 8, 9, 17, 18, 26, 27, 28, 29, 30, 32, 33];
+  }
+
+  /**
+   * 检查十三幺（红中可以替补缺的幺九牌）
+   * 手牌需包含13种幺九牌各至少1张 + 1对（自然的或用红中补）
+   */
+  static _checkThirteenOrphans(hand) {
+    if (hand.length !== 14) return { isWin: false };
+
+    const yaoTypes = FanCalculator.THIRTEEN_YAO_TYPES;
+    const counts = {};
+    let wildCount = 0;
+    for (const t of hand) {
+      if (isWild(t)) {
+        wildCount++;
+      } else {
+        counts[t] = (counts[t] || 0) + 1;
+      }
+    }
+
+    // 非红中牌必须全是幺九牌
+    for (const t of Object.keys(counts).map(Number)) {
+      if (!yaoTypes.includes(t)) {
+        return { isWin: false }; // 有非幺九牌
+      }
+    }
+
+    // 统计已有的幺九种类数和是否存在自然对子
+    let typesPresent = 0;
+    let hasNaturalPair = false;
+    for (const t of yaoTypes) {
+      const c = counts[t] || 0;
+      if (c >= 2) hasNaturalPair = true;
+      if (c >= 1) typesPresent++;
+    }
+
+    // 缺几种幺九牌需要红中补
+    const missingTypes = yaoTypes.length - typesPresent; // 12 - typesPresent
+    let remainingWilds = wildCount - missingTypes;
+    if (remainingWilds < 0) return { isWin: false };
+
+    // 检查对子
+    if (hasNaturalPair) {
+      return { isWin: true };
+    }
+
+    // 用剩下的红中做对子
+    if (remainingWilds >= 2) {
+      return { isWin: true };
+    }
+
+    // 某一种幺九牌有1张，再加1张红中成对
+    for (const t of yaoTypes) {
+      if ((counts[t] || 0) === 1 && remainingWilds >= 1) {
+        return { isWin: true };
+      }
     }
 
     return { isWin: false };

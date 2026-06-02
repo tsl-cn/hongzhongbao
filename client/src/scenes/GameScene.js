@@ -8,6 +8,7 @@
 import Phaser from 'phaser';
 import TileRenderer from '../game/TileRenderer.js';
 import VoiceChatManager from '../network/VoiceChatManager.js';
+import { getTheme, color as tc, font as tf, onThemeChange, switchTheme } from '../game/ThemeManager.js';
 
 const SEAT_NAMES = ['东', '南', '西', '北'];
 
@@ -37,8 +38,8 @@ export default class GameScene extends Phaser.Scene {
     this._roundStarted = false;   // 牌局未开始，手牌背面
     this._handBounds = {};        // 手牌边界信息（供碰杠牌定位）
 
-    this.TILE_W = 54;         // 自摸手牌宽（1.5倍）
-    this.TILE_H = 72;         // 自摸手牌高（1.5倍）
+    this.TILE_W = 60;         // 自摸手牌宽（主题增强版）
+    this.TILE_H = 80;         // 自摸手牌高（主题增强版）
     this.HAND_Y = 515;        // 手牌下移0.7牌位 (72*0.7≈50)
   }
 
@@ -46,14 +47,15 @@ export default class GameScene extends Phaser.Scene {
     const W = this.cameras.main.width;
     const H = this.cameras.main.height;
 
-    // 桌面背景（深色底色 + 径向渐变桌面纹理）
-    this.add.rectangle(W / 2, H / 2, W, H, 0x1a3a2e);
+    // 桌面背景（主题感知）
+    const cols = getTheme().colors;
+    this.add.rectangle(W / 2, H / 2, W, H, cols.background);
     const tableGfx = this.add.graphics();
-    tableGfx.fillStyle(0x2a5a3e, 1);
+    tableGfx.fillStyle(cols.tableBg, 1);
     tableGfx.fillRoundedRect(W / 2 - 330, H / 2 - 140, 660, 280, 6);
-    tableGfx.fillStyle(0x2f6345, 0.6);
+    tableGfx.fillStyle(cols.tableInner, 0.7);
     tableGfx.fillRoundedRect(W / 2 - 310, H / 2 - 125, 620, 250, 4);
-    tableGfx.lineStyle(2, 0x4a8a5e, 1);
+    tableGfx.lineStyle(2, cols.tableBorder, 1);
     tableGfx.strokeRoundedRect(W / 2 - 330, H / 2 - 140, 660, 280, 6);
 
     this.players = this.gameData.players || [];
@@ -249,17 +251,19 @@ export default class GameScene extends Phaser.Scene {
   // ========== 中央牌局日志 ==========
 
   _createLogArea() {
+    const cols = getTheme().colors;
     const W = this.cameras.main.width;
     const H = this.cameras.main.height;
 
     // 日志区在弃牌矩形内部，高度5行中文
     const logW = 6 * 29 - 20;   // 174 - 边距
     const logH = 100;           // 5行中文 ≈ 5*(13+4)+10
-    this.logBg = this.add.rectangle(W / 2, H / 2 - 36, logW, logH, 0x000000, 0.7)
-      .setDepth(3).setStrokeStyle(1, 0x4a8a5e).setVisible(true);
+    this.logBg = this.add.rectangle(W / 2, H / 2 - 36, logW, logH, cols.logBg, 0.7)
+      .setDepth(3).setStrokeStyle(1, cols.tableBorder).setVisible(true);
 
+    const logColor = '#' + cols.logText.toString(16).padStart(6, '0');
     this.logText = this.add.text(W / 2, H / 2 - 36 - logH / 2 + 6, '', {
-      fontSize: '13px', color: '#ffffff', lineSpacing: 6, fontFamily: 'Arial, sans-serif',
+      fontSize: '13px', color: logColor, lineSpacing: 6, fontFamily: 'Arial, sans-serif',
       wordWrap: { width: logW - 10 }, padding: { top: 1, bottom: 1 },
     }).setOrigin(0.5, 0).setDepth(4).setVisible(true);
   }
@@ -615,7 +619,7 @@ export default class GameScene extends Phaser.Scene {
         this.tileElements.push(container);
 
         if (this.selectedTileIdx === idx) {
-          const glow = this.add.rectangle(x, liftY, this.TILE_W + 6, this.TILE_H + 6, 0xffff00, 0.25)
+          const glow = this.add.rectangle(x, liftY, this.TILE_W + 6, this.TILE_H + 6, getTheme().colors.glowColor, 0.25)
             .setDepth(11).setStrokeStyle(2, 0xffdd00);
           this.tileElements.push(glow);
         }
@@ -811,8 +815,8 @@ export default class GameScene extends Phaser.Scene {
           el.setDepth(3).setAlpha(0.9);
           this.discardElements.push(el);
           if (this.selectedTileType !== null && tile === this.selectedTileType) {
-            const glow = this.add.rectangle(x, y, tW + 4, tH + 4, 0xffff00, 0.3)
-              .setDepth(3).setStrokeStyle(2, 0xffdd00);
+            const glow = this.add.rectangle(x, y, tW + 4, tH + 4, getTheme().colors.glowColor, 0.3)
+              .setDepth(3).setStrokeStyle(2, getTheme().colors.accentLight);
             this.discardElements.push(glow);
           }
         });
@@ -1012,6 +1016,11 @@ export default class GameScene extends Phaser.Scene {
         this.hand = data.hand;
         this.lastDrawTile = data.lastDrawnTile !== undefined ? data.lastDrawnTile : null;
         this._renderHand();
+        // 手牌更新后检查暗杠（防止 game_state_update 先到导致漏检）
+        if (this.isMyTurn) {
+          const kongActions = this._findConcealedKongs();
+          if (kongActions.length > 0) this._showActionButtons(kongActions);
+        }
       }
     });
 
@@ -1020,6 +1029,9 @@ export default class GameScene extends Phaser.Scene {
       this._renderHand();         // 立即重绘，翻正牌面
       if (data.playerId === this.socket.playerId) {
         this.isMyTurn = true;
+        // 轮到我了，检查暗杠
+        const kongActions = this._findConcealedKongs();
+        if (kongActions.length > 0) this._showActionButtons(kongActions);
       } else {
         this.isMyTurn = false;
       }
@@ -1148,6 +1160,16 @@ export default class GameScene extends Phaser.Scene {
         if (!hr || hr.pickerAdjustment === 0) return;
         roundNet[hr.playerName] = (roundNet[hr.playerName] || 0) + hr.pickerAdjustment;
       });
+    }
+
+    // 归一化：确保 roundNet 总和为0（兜底防累积误差）
+    const netValues = Object.values(roundNet);
+    const netSum = netValues.reduce((a, b) => a + b, 0);
+    if (netSum !== 0 && Object.keys(roundNet).length > 0) {
+      const adjust = -netSum;
+      // 调整到第一个玩家
+      const firstName = Object.keys(roundNet)[0];
+      roundNet[firstName] += adjust;
     }
 
     for (const [name, net] of Object.entries(roundNet)) {

@@ -1,11 +1,12 @@
 /**
- * TileRenderer.js — 牌面渲染器
+ * TileRenderer.js — 牌面渲染器（主题感知）
  *
- * 用 Phaser 图形绘制麻将牌（占位用）
- * 如用户添加了图片素材，可切换为 sprite 渲染
+ * 用 Phaser 图形绘制麻将牌。
+ * 颜色从 ThemeManager 获取，跟随主题切换。
  */
 
 import Phaser from 'phaser';
+import { getTheme, color as tc } from './ThemeManager.js';
 
 // 牌面中文名
 const TILE_NAMES = {
@@ -19,16 +20,16 @@ const TILE_NAMES = {
   31: '中', 32: '发', 33: '白',
 };
 
-// 牌面颜色
-const TILE_COLORS = {
-  man: 0xffffff,       // 万 → 白底黑字
-  pin: 0xffffff,       // 筒 → 白底黑字
-  sou: 0xffffff,       // 条 → 白底黑字
-  wind: 0xffffff,      // 风 → 白底黑字
-  red: 0xffffff,       // 红中 → 白底红字
-  green: 0xffffff,     // 发财 → 白底绿字
-  white: 0xffffff,     // 白板 → 白底
-};
+/**
+ * 获取牌的分类索引
+ * 0=万, 1=筒, 2=条, 3=字牌(东南西北中发白)
+ */
+function tileCategory(tileType) {
+  if (tileType <= 8) return 0;      // 万
+  if (tileType <= 17) return 1;     // 筒
+  if (tileType <= 26) return 2;     // 条
+  return 3;                          // 字牌
+}
 
 class TileRenderer {
   /**
@@ -51,6 +52,8 @@ class TileRenderer {
    */
   static createTile(scene, tileType, x, y, w = 40, h = 56, faceDown = false) {
     const container = scene.add.container(x, y);
+    const theme = getTheme();
+    const cols = theme.colors;
 
     if (faceDown) {
       // 牌背：优先使用精灵图片
@@ -61,12 +64,12 @@ class TileRenderer {
         sprite.setOrigin(0.5);
         container.add(sprite);
       } else {
-        // 回退：文字+色块牌背
-        const bg = scene.add.rectangle(0, 0, w, h, 0x2a5a8a);
-        bg.setStrokeStyle(2, 0x1a4a7a);
+        // 回退：主题色牌背
+        const bg = scene.add.rectangle(0, 0, w, h, cols.tileBack);
+        bg.setStrokeStyle(2, cols.tileBackPattern);
         container.add(bg);
         const pattern = scene.add.text(0, 0, '🀄', {
-          fontSize: '20px',
+          fontSize: Math.max(12, w * 0.45) + 'px',
         }).setOrigin(0.5);
         container.add(pattern);
       }
@@ -82,7 +85,7 @@ class TileRenderer {
       sprite.setDisplaySize(w, h);
       sprite.setOrigin(0.5);
       container.add(sprite);
-      // 红中加边框标记
+      // 红中加边框标记（不受主题影响，始终红色）
       if (tileType === 31) {
         const border = scene.add.rectangle(0, 0, w - 2, h - 2);
         border.setStrokeStyle(2, 0xff0000);
@@ -90,24 +93,39 @@ class TileRenderer {
         container.add(border);
       }
     } else {
-      // 回退：文字渲染
-      const bg = scene.add.rectangle(0, 0, w, h, 0xffffff);
-      bg.setStrokeStyle(2, tileType === 31 ? 0xff0000 : 0x333333);
+      // 回退：文字渲染（主题感知）
+      const cat = tileCategory(tileType);
+      const catColor = cols.tileCategory[cat];
+
+      // 牌底色
+      const bg = scene.add.rectangle(0, 0, w, h, cols.tileBg);
+      const borderColor = tileType === 31 ? 0xff0000 : cols.tileBorder;
+      bg.setStrokeStyle(2, borderColor);
       container.add(bg);
 
+      // 牌面文字
       const name = TILE_NAMES[tileType] || '?';
-      const textColor = tileType === 31 ? '#ff0000' : tileType === 32 ? '#00aa00' : '#000000';
-      const text = scene.add.text(0, 0, name, {
-        fontSize: w < 40 ? '12px' : '15px',
+      const textColor = tileType === 31 ? '#ff0000'
+        : tileType === 32 ? '#00aa00'
+        : tileType === 33 ? '#888888'
+        : '#000000';
+      const text = scene.add.text(0, -3, name, {
+        fontSize: w < 40 ? Math.max(10, w * 0.28) + 'px' : Math.max(13, w * 0.26) + 'px',
         color: textColor,
-        fontFamily: 'Arial',
+        fontFamily: 'Arial, sans-serif',
         fontStyle: 'bold',
       }).setOrigin(0.5);
       container.add(text);
 
+      // 底部彩色分类条
+      const stripe = scene.add.rectangle(0, h / 2 - 3, w - 6, 4, catColor);
+      stripe.setOrigin(0.5);
+      container.add(stripe);
+
+      // 红中标记
       if (tileType === 31) {
         const star = scene.add.text(0, -h / 2 + 10, '★', {
-          fontSize: '10px', color: '#ff0000',
+          fontSize: Math.max(8, w * 0.18) + 'px', color: '#ff0000',
         }).setOrigin(0.5);
         container.add(star);
       }
@@ -126,6 +144,8 @@ class TileRenderer {
    */
   static createClickableTile(scene, tileType, x, y, w = 40, h = 56, onClick) {
     const container = TileRenderer.createTile(scene, tileType, x, y, w, h);
+    const theme = getTheme();
+    const cols = theme.colors;
 
     // 添加点击区域
     const hitZone = scene.add.rectangle(0, 0, w, h, 0x000000, 0)
@@ -136,12 +156,11 @@ class TileRenderer {
       if (onClick) onClick(tileType);
     });
 
-    // 悬停高亮效果
+    // 悬停高亮（主题感知）
     hitZone.on('pointerover', () => {
-      // 如果第一个元素是 sprite，加半透明覆盖层
       const first = container.getAt(0);
       if (first && first.type === 'Image') {
-        const overlay = scene.add.rectangle(0, 0, w, h, 0xffffaa, 0.3);
+        const overlay = scene.add.rectangle(0, 0, w, h, cols.highlight, 0.25);
         overlay.setName('hover_overlay');
         container.add(overlay);
       } else if (first && first.type === 'Rectangle') {
@@ -149,12 +168,11 @@ class TileRenderer {
       }
     });
     hitZone.on('pointerout', () => {
-      // 移除覆盖层
       const overlay = container.getByName('hover_overlay');
       if (overlay) overlay.destroy();
       const first = container.getAt(0);
       if (first && first.type === 'Rectangle') {
-        first.setFillStyle(0xffffff);
+        first.setFillStyle(cols.tileBg);
       }
     });
 
