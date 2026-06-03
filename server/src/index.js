@@ -13,7 +13,7 @@ const RoomManager = require('./rooms/RoomManager');
 const AiPlayer = require('./ai/AiPlayer');
 const { createAiView } = require('./ai/AiView');
 const HorseBuyer = require('./game/HorseBuyer');
-const { TILE_NAMES } = require('./game/TileDef');
+const { TILE_NAMES, isWild } = require('./game/TileDef');
 
 const app = express();
 const server = http.createServer(app);
@@ -139,6 +139,7 @@ io.on('connection', (socket) => {
   socket.on('discard_tile', (data) => {
     const room = roomManager.getPlayerRoom(socket.id);
     if (!room || !room.gameState) return;
+    _clearDiscardTimer(room);
     const result = room.gameState.discardTile(data.tileType);
     _broadcastGameState(room, result);
   });
@@ -146,6 +147,7 @@ io.on('connection', (socket) => {
   socket.on('pong', (data) => {
     const room = roomManager.getPlayerRoom(socket.id);
     if (!room || !room.gameState) return;
+    _clearDiscardTimer(room);
     const result = room.gameState.requestPong(socket.id);
     _broadcastGameState(room, result);
   });
@@ -153,6 +155,7 @@ io.on('connection', (socket) => {
   socket.on('kong', (data) => {
     const room = roomManager.getPlayerRoom(socket.id);
     if (!room || !room.gameState) return;
+    _clearDiscardTimer(room);
     const result = room.gameState.requestKong(socket.id, data.tileType);
     _broadcastGameState(room, result);
   });
@@ -160,6 +163,7 @@ io.on('connection', (socket) => {
   socket.on('win', (data) => {
     const room = roomManager.getPlayerRoom(socket.id);
     if (!room || !room.gameState) return;
+    _clearDiscardTimer(room);
     const result = room.gameState.requestWin(socket.id);
     _recordWinner(room);
     _broadcastGameState(room, result);
@@ -168,8 +172,88 @@ io.on('connection', (socket) => {
   socket.on('skip_action', () => {
     const room = roomManager.getPlayerRoom(socket.id);
     if (!room || !room.gameState) return;
+    _clearDiscardTimer(room);
     const result = room.gameState.skipAction(socket.id);
     _broadcastGameState(room, result);
+  });
+
+  // ---- AI托管 ----
+  socket.on('ai_takeover', () => {
+    const room = roomManager.getPlayerRoom(socket.id);
+    if (!room || !room.gameState) return;
+    const player = room.players.find(p => p.id === socket.id);
+    if (!player) return;
+    _activateAiTakeover(room, player);
+  });
+
+  socket.on('cancel_ai_takeover', () => {
+    const room = roomManager.getPlayerRoom(socket.id);
+    if (!room || !room.gameState) return;
+    const player = room.players.find(p => p.id === socket.id);
+    if (!player) return;
+    _deactivateAiTakeover(room, player);
+  });
+
+  // ---- 断线重连 ----
+  socket.on('reconnect_game', (data) => {
+    const { roomId, nickname } = data;
+    const room = roomManager.rooms.get(roomId);
+    if (!room) {
+      socket.emit('reconnect_failed', { message: '房间不存在或已结束' });
+      return;
+    }
+    if (room.status !== 'playing') {
+      socket.emit('reconnect_failed', { message: '牌局已结束，请返回大厅' });
+      return;
+    }
+    const player = roomManager.findPlayerByNickname(roomId, nickname);
+    if (!player) {
+      socket.emit('reconnect_failed', { message: '未在房间中找到该玩家' });
+      return;
+    }
+
+    // 重连成功：挤掉AI，恢复控制
+    const success = roomManager.reconnectPlayer(roomId, player, socket.id);
+    if (!success) {
+      socket.emit('reconnect_failed', { message: '重连失败' });
+      return;
+    }
+    aiPlayers.delete(player.id);
+    _clearDiscardTimer(room);
+
+    // 发送完整游戏快照给重连玩家
+    const state = room.gameState.getState();
+    const gameSnapshot = {
+      dealer: state.windDealer,
+      dealerName: ['东','南','西','北'][state.windDealer],
+      diceResults: null,
+      horseResult: null,
+      needHorseSelection: false,
+      wallRemaining: state.wallRemaining,
+      seatCount: room.players.length,
+      players: room.players.map(p => {
+        const sortedHand = [...p.hand].sort((a, b) => a - b);
+        return {
+          id: p.id,
+          name: p.name,
+          isAI: p.isAI,
+          seatIndex: p.seatIndex,
+          handSize: sortedHand.length,
+          hand: sortedHand,
+        };
+      }),
+      mySeat: player.seatIndex,
+      gameLog: state.gameLog,
+      isReconnect: true,
+    };
+    socket.emit('reconnect_approved', gameSnapshot);
+
+    // 通知其他玩家有人重连
+    socket.to(room.id).emit('player_reconnected', {
+      seat: player.seatIndex,
+      playerName: player.name,
+    });
+    console.log(`[重连] ${nickname} 重连房间 ${roomId}，座位 ${['东','南','西','北'][player.seatIndex]}`);
   });
 
   // ---- 语音信令 ----
@@ -204,8 +288,27 @@ io.on('connection', (socket) => {
   // ---- 断开连接 ----
   socket.on('disconnect', () => {
     console.log(`[断开] ${socket.id} 已断开`);
+
+    // 检查是否在游戏中
+    const playRoom = roomManager.getPlayerRoom(socket.id);
+    if (playRoom && playRoom.status === 'playing') {
+      // 游戏中断线：标记断线 + AI接管
+      const dcResult = roomManager.markDisconnectedInGame(socket.id);
+      if (dcResult) {
+        const { room, player } = dcResult;
+        _clearDiscardTimer(room);
+        _activateAiTakeover(room, player);
+        io.to(room.id).emit('player_disconnected', {
+          seat: player.seatIndex,
+          playerName: player.name,
+        });
+      }
+      return;
+    }
+
+    // 等待/大厅中：原行为
     const result = roomManager.leaveRoom(socket.id);
-    if (!result) return; // 房间已关闭
+    if (!result) return;
 
     const room = result;
     const roomInfo = roomManager.getRoomInfo(room.id);
@@ -326,11 +429,22 @@ function startGame(roomId) {
 function _startFirstTurn(roomId) {
   const roomNow = roomManager.rooms.get(roomId);
   if (!roomNow || !roomNow.gameState || roomNow.players.length === 0) return;
-  io.to(roomId).emit('your_turn', {
-    seat: roomNow.gameState.currentSeat,
-    playerId: roomNow.players[roomNow.gameState.currentSeat]?.id || '',
-  });
-  _triggerAITurn(roomNow);
+
+  const currentPlayer = roomNow.players[roomNow.gameState.currentSeat];
+
+  // _startDiscardTimer 内部会发送 your_turn（含 timeout）
+  // AI/托管 直接走 AI 决策
+  if (currentPlayer && !currentPlayer.isAI && !currentPlayer.aiControlled) {
+    _startDiscardTimer(roomNow);
+  } else {
+    // 对 AI 也要发送 your_turn（客户端需要知道轮到谁，但无 timeout）
+    io.to(roomId).emit('your_turn', {
+      seat: roomNow.gameState.currentSeat,
+      playerId: currentPlayer?.id || '',
+      timeout: 0,
+    });
+    _triggerAITurn(roomNow);
+  }
 }
 
 // ==================== 下一局（保留庄家，不重新定庄） ====================
@@ -453,32 +567,133 @@ function _getOrCreateAI(player, room) {
   return ai;
 }
 
+// ==================== 出牌计时器 ====================
+
+/** 开始出牌倒计时（仅真人玩家，AI托管中不启动） */
+function _startDiscardTimer(room) {
+  _clearDiscardTimer(room);
+  const player = room.players[room.gameState.currentSeat];
+  if (!player || player.isAI || player.aiControlled) return;
+
+  // 发送 your_turn 给该玩家（含 timeout 字段）
+  const state = room.gameState.getState();
+  _broadcastToRoom(room.id, 'your_turn', {
+    seat: room.gameState.currentSeat,
+    playerId: player.id,
+    timeout: 30,
+    phase: state.phase,
+    currentSeat: state.currentSeat,
+  });
+
+  room._discardTimer = setTimeout(() => {
+    _autoDiscard(room);
+  }, 30000);
+}
+
+/** 清除出牌计时器 */
+function _clearDiscardTimer(room) {
+  if (room._discardTimer) {
+    clearTimeout(room._discardTimer);
+    room._discardTimer = null;
+  }
+}
+
+/** 超时自动出牌 + AI托管 */
+function _autoDiscard(room) {
+  const player = room.players[room.gameState.currentSeat];
+  if (!player) return;
+
+  const tileType = room.gameState.getRandomDiscardTile();
+  if (tileType === null) return;
+
+  console.log(`[超时] ${player.name} 超时未出牌，自动打出 ${TILE_NAMES[tileType]}，AI托管`);
+  const result = room.gameState.discardTile(tileType);
+  _broadcastGameState(room, result);
+
+  // 自动AI托管
+  player.aiControlled = true;
+  _broadcastToRoom(room.id, 'ai_takeover', {
+    seat: player.seatIndex,
+    playerName: player.name,
+    auto: true,
+  });
+}
+
+/** 激活AI托管（手动或断线） */
+function _activateAiTakeover(room, player) {
+  if (player.aiControlled) return;
+  _clearDiscardTimer(room); // 进入托管立即清除倒计时
+  player.aiControlled = true;
+
+  _broadcastToRoom(room.id, 'ai_takeover', {
+    seat: player.seatIndex,
+    playerName: player.name,
+    auto: false,
+  });
+
+  // 如果当前轮到该玩家，让AI立即决策
+  if (room.gameState.currentSeat === player.seatIndex) {
+    _triggerAITurn(room);
+  }
+}
+
+/** 取消AI托管（手动点击熄灭） */
+function _deactivateAiTakeover(room, player) {
+  if (!player.aiControlled) return;
+  player.aiControlled = false;
+
+  // 删除旧AI实例
+  aiPlayers.delete(player.id);
+
+  _broadcastToRoom(room.id, 'cancel_ai_takeover', {
+    seat: player.seatIndex,
+    playerName: player.name,
+  });
+}
+
+// ==================== AI 决策引擎 ====================
+
+function _getOrCreateAI(player, room) {
+  let ai = aiPlayers.get(player.id);
+  if (!ai) {
+    // 创建 AI 信息防火墙：AI 只能看到公开信息
+    const aiView = createAiView(room.gameState, player.seatIndex);
+    ai = new AiPlayer(player.seatIndex, aiView, (actionType, data) => {
+      _handleAIAction(room.id, player.id, actionType, data);
+    });
+    aiPlayers.set(player.id, ai);
+  }
+  return ai;
+}
+
 function _triggerAITurn(room) {
-  // ACTION阶段：处理AI的碰/杠/胡决策
+  // ACTION阶段：处理AI/托管人的碰/杠/胡决策
   if (room.gameState.phase === 'action' && room.gameState.actionQueue.length > 0) {
     const firstAction = room.gameState.actionQueue[0];
     const player = room.players[firstAction.seat];
-    if (player && player.isAI) {
+    if (player && (player.isAI || player.aiControlled)) {
       const ai = _getOrCreateAI(player, room);
       const roomId = room.id;
+      const delay = player.isAI ? 300 + Math.random() * 300 : 200 + Math.random() * 300;
       setTimeout(() => {
-        if (!roomManager.rooms.has(roomId)) return; // 房间已销毁
+        if (!roomManager.rooms.has(roomId)) return;
         ai.decide({ type: 'action_available', availableActions: [firstAction] });
-      }, 300 + Math.random() * 300);
+      }, delay);
     }
     return;
   }
 
-  // DISCARD阶段：当前AI出牌
+  // DISCARD阶段：当前AI/托管人出牌
   const currentPlayer = room.players[room.gameState.currentSeat];
-  if (!currentPlayer || !currentPlayer.isAI) return;
+  if (!currentPlayer || (!currentPlayer.isAI && !currentPlayer.aiControlled)) return;
 
   const ai = _getOrCreateAI(currentPlayer, room);
   const roomId = room.id;
+  const delay = currentPlayer.isAI ? 500 + Math.random() * 500 : 200 + Math.random() * 300;
   setTimeout(() => {
-    if (!roomManager.rooms.has(roomId)) return; // 房间已销毁
+    if (!roomManager.rooms.has(roomId)) return;
     ai.decide({ type: 'discard' });
-  }, 500 + Math.random() * 500);
+  }, delay);
 }
 
 function _handleAIAction(roomId, aiId, actionType, data) {
@@ -566,105 +781,103 @@ function _broadcastGameState(room, result) {
 
   // 如果是结算阶段
   if (state.phase === 'settle') {
-    // 每人独立马牌结算
-    const horseResults = [];
+    _clearDiscardTimer(room);
+
     const winner = state.result?.winner;
-    if (winner !== undefined && winner !== null && room.horseResults) {
-      for (let i = 0; i < 4; i++) {
-        const hr = room.horseResults[i];
-        if (!hr || hr.horses.length === 0) {
-          horseResults[i] = null;
-          continue;
+    const fan = state.result?.fan || 3;
+    const horseSettlement = [null, null, null, null];
+
+    if (winner !== undefined && winner !== null) {
+      // ====== Step 1: 胡牌番型（替代原始番，仅胡家一匹虚拟中马） ======
+      //   胡家: +3×fan, 其他3家各 -fan
+      const virtualNet = [0, 0, 0, 0];
+      virtualNet[winner] += 3 * fan;
+      for (let o = 0; o < 4; o++) if (o !== winner) virtualNet[o] -= fan;
+
+      // ====== Step 2: 实际买马（新规则） ======
+      //   中马(owner=胡家):   owner+3, 其他3家各-1
+      //   中马(owner≠胡家):   胡家0, owner+2, 其他2家各-1
+      //   不中(owner≠胡家):   owner-3, 其他3家各+1
+      //   不中(owner=胡家):   0
+      const realNet = [0, 0, 0, 0];
+      const realDetails = [[], [], [], []];
+      const playerNames = ['东', '南', '西', '北'];
+
+      if (room.horseResults) {
+        for (let i = 0; i < 4; i++) {
+          const hr = room.horseResults[i];
+          if (!hr || !hr.horses || hr.horses.length === 0) continue;
+
+          const settleResult = HorseBuyer.settleHorses(hr.horses, winner, fan, i);
+
+          for (const r of settleResult.results) {
+            const isHit = r.isHit;
+            let adj;
+
+            if (isHit) {
+              if (i === winner) {
+                // 胡家自中: +3, 其他3家各-1
+                adj = 3 * fan;
+                realNet[i] += adj;
+                for (let o = 0; o < 4; o++) if (o !== i) realNet[o] -= fan;
+              } else {
+                // 非胡家中: 马主+2(从2家各收1), 胡家0, 其他2家各-1
+                adj = 2 * fan;
+                realNet[i] += adj;
+                for (let o = 0; o < 4; o++) {
+                  if (o !== i && o !== winner) realNet[o] -= fan;
+                }
+                // 胡家 0（不改动）
+              }
+            } else {
+              if (i !== winner) {
+                // 非胡家不中: 马主-3(付全部3家各1), 其他3家各+1
+                adj = -3 * fan;
+                realNet[i] += adj;
+                for (let o = 0; o < 4; o++) if (o !== i) realNet[o] += fan;
+              } else {
+                // 胡家不中: 0
+                adj = 0;
+              }
+            }
+
+            realDetails[i].push({
+              tileType: r.tileType,
+              tileName: r.tileName,
+              ownerSeat: r.ownerSeat,
+              isHit,
+              adjustment: adj,
+            });
+          }
         }
-        horseResults[i] = {
+      }
+
+      // ====== Step 3: 合并结果（每人必有虚拟马） ======
+      for (let i = 0; i < 4; i++) {
+        const hr = room.horseResults ? room.horseResults[i] : null;
+        const pName = hr ? hr.playerName : (state.players[i]?.name || playerNames[i]);
+        const count = hr ? (hr.horses ? hr.horses.length : (hr.count || 0)) : 0;
+        const totalAdj = virtualNet[i] + realNet[i];
+
+        horseSettlement[i] = {
           seatIndex: i,
-          playerName: hr.playerName,
-          count: hr.count,
-          ...HorseBuyer.settleHorses(hr.horses, winner, state.result.fan || 3, i),
+          playerName: pName,
+          count,
+          virtualAdjustment: virtualNet[i],
+          results: realDetails[i],
+          pickerAdjustment: totalAdj,
         };
       }
 
-      // 每匹马独立结算规则（总计必=0）：
-      //   中马: owner +3fan, 其他3家各 -fan
-      //   不中(owner≠胡牌家): owner -fan, 胡牌家 +fan
-      //   不中(owner=胡牌家): 0
-      // 胡牌家合计 = W_hit×fan×3 + 非胡牌家不中总数×fan - 非胡牌家中总数×fan
-      // 非胡牌家X合计 = X_hit×fan×3 - X_not×fan - (总中马 - X_hit)×fan
-      const totalHits = [0, 0, 0, 0];
-      let totalAllHits = 0, totalNonWinnerNot = 0;
-      for (let i = 0; i < 4; i++) {
-        const hr = horseResults[i];
-        if (hr) {
-          totalHits[i] = hr.results.filter(r => r.isHit).length;
-          totalAllHits += totalHits[i];
-          if (i !== winner) totalNonWinnerNot += hr.results.filter(r => !r.isHit).length;
-        }
-      }
-      const fan = state.result.fan || 3;
-      for (let i = 0; i < 4; i++) {
-        if (!horseResults[i]) continue;
-        const isWinner = (i === winner);
-        const myHits = totalHits[i];
-        let directAdj = 0;
-        for (const r of horseResults[i].results) {
-          if (isWinner) {
-            r.adjustment = r.isHit ? fan * 3 : 0;
-          } else {
-            r.adjustment = r.isHit ? fan * 3 : -fan;
-          }
-          directAdj += r.adjustment;
-        }
-        // 计算交叉项
-        let crossTerm = 0;
-        if (!isWinner) {
-          crossTerm = -fan * (totalAllHits - myHits);
-        }
-        if (isWinner) {
-          const totalNonWinnerHits = totalAllHits - myHits;
-          crossTerm = totalNonWinnerNot * fan - totalNonWinnerHits * fan;
-        }
-        // 交叉项分摊（便于结算页逐马展示完整输赢）
-        // 胡牌家：只分摊给中马，不中马保持0
-        // 非胡牌家：分摊给所有马
-        if (isWinner) {
-          const hitHorses = horseResults[i].results.filter(r => r.isHit);
-          const hCount = hitHorses.length;
-          if (hCount > 0) {
-            const perHit = Math.floor(crossTerm / hCount);
-            const rem = crossTerm - perHit * hCount;
-            let idx = 0;
-            horseResults[i].results.forEach((r) => {
-              if (r.isHit) {
-                r.adjustment += perHit;
-                if (idx === hCount - 1) r.adjustment += rem;
-                idx++;
-              }
-              // 不中马保持 direct(0)
-            });
-          }
-        } else {
-          const hCount = horseResults[i].results.length;
-          const perHorse = hCount > 0 ? Math.floor(crossTerm / hCount) : 0;
-          const remainder = crossTerm - perHorse * hCount;
-          horseResults[i].results.forEach((r, idx) => {
-            r.adjustment += perHorse;
-            if (idx === hCount - 1) r.adjustment += remainder;
-          });
-        }
-        horseResults[i].pickerAdjustment = directAdj + crossTerm;
-      }
-      // 校验：马牌结算总和必须为0
-      let horseTotal = 0;
-      for (let i = 0; i < 4; i++) {
-        if (horseResults[i]) horseTotal += horseResults[i].pickerAdjustment;
-      }
-      if (horseTotal !== 0) {
-        console.error(`🚨 马牌结算不平衡! total=${horseTotal}, fan=${fan}, winner=${winner}`);
+      // 校验：总和必须为0
+      const checkTotal = virtualNet.reduce((a, b) => a + b, 0) + realNet.reduce((a, b) => a + b, 0);
+      if (checkTotal !== 0) {
+        console.error(`🚨 结算不平衡! total=${checkTotal}, fan=${fan}, winner=${winner}`);
       }
     }
     _broadcastToRoom(room.id, 'game_over', {
       result: state.result,
-      horseResults,
+      horseResults: horseSettlement,
       players: state.players.map(p => ({
         id: p.id,
         name: p.name,
@@ -679,6 +892,7 @@ function _broadcastGameState(room, result) {
 
   // 摸牌阶段 → 自动摸牌（不分Human/AI），深度保护防无限递归
   if (state.phase === 'draw') {
+    _clearDiscardTimer(room); // 摸牌时停止倒计时
     const drawResult = room.gameState.drawTile();
     if (drawResult.error || drawResult.type === 'flow') {
       if (drawResult.type === 'flow') _broadcastGameState(room, drawResult);
@@ -697,8 +911,20 @@ function _broadcastGameState(room, result) {
     return;
   }
 
-  // 如果当前轮到AI，触发AI
-  _triggerAITurn(room);
+  // 当前轮到谁？
+  if (state.phase === 'discard') {
+    const currentPlayer = room.players[state.currentSeat];
+    if (currentPlayer && (currentPlayer.isAI || currentPlayer.aiControlled)) {
+      // AI或托管人 → AI决策
+      _triggerAITurn(room);
+    } else if (currentPlayer && !currentPlayer.isAI) {
+      // 真人 → 启动出牌计时器
+      _startDiscardTimer(room);
+    }
+  } else if (state.phase === 'action') {
+    // ACTION阶段 → AI/托管决策
+    _triggerAITurn(room);
+  }
 }
 
 function _broadcastToRoom(roomId, event, data) {

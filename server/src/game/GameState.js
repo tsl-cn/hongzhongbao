@@ -749,6 +749,16 @@ class GameState {
     this.lastDrawnTile = null;  // 换人，清除标记
   }
 
+  /** 获取当前玩家的随机非红中出牌 */
+  getRandomDiscardTile() {
+    const player = this.players[this.currentSeat];
+    if (!player) return null;
+    const nonWild = player.hand.filter(t => !isWild(t));
+    if (nonWild.length === 0) return null;
+    const idx = Math.floor(Math.random() * nonWild.length);
+    return nonWild[idx];
+  }
+
   /** 通过ID找座位号 */
   _findSeatById(playerId) {
     for (let i = 0; i < 4; i++) {

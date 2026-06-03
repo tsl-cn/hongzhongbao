@@ -34,10 +34,11 @@ export default class LobbyScene extends Phaser.Scene {
     this.isReady = false;
     this.roomId = null;
 
-    // 解析 URL 参数（分享房间自动加入）
+    // 解析 URL 参数（分享房间自动加入 / 断线重连）
     const params = new URLSearchParams(window.location.search);
     this._autoJoinRoom = params.get('room') || null;
     this._autoJoinPass = params.get('password') || '';
+    this._autoJoinNickname = params.get('nickname') || null;
 
     // DOM elements track
     this._domElements = [];
@@ -229,6 +230,14 @@ export default class LobbyScene extends Phaser.Scene {
     this.socket.connect().then(() => {
       this.statusText.setText('✅ 已连接');
       this.statusText.setColor('#00ff00');
+
+      // 带昵称的房间链接 → 尝试断线重连
+      if (this._autoJoinRoom && this._autoJoinNickname) {
+        this.statusText.setText('⏳ 尝试重新连接...');
+        this.socket.reconnectGame(this._autoJoinRoom, this._autoJoinNickname);
+        // 不清理 URL，重连失败后供重试
+        return;
+      }
 
       // 自动加入分享的房间
       if (this._autoJoinRoom) {
@@ -528,6 +537,7 @@ export default class LobbyScene extends Phaser.Scene {
   _showRoomView(roomData) {
     this.inRoom = true;
     this.roomId = roomData.id;
+    this.socket.setRoomId(roomData.id);
     this.isHost = (roomData.hostId === this.socket.playerId);
     // 从服务端恢复自己的准备状态
     const myPlayer = (roomData.players || []).find(p => p.id === this.socket.playerId);
@@ -975,6 +985,21 @@ ${passStr}点击链接自动加入房间，等待开局！`;
         this._showToast('👑 你已成为新房主！');
         this._updateRoomPlayers(roomData);
       }
+    });
+
+    this.socket.on('reconnect_approved', (data) => {
+      // 清理 URL 参数
+      window.history.replaceState({}, '', window.location.pathname);
+      this._startGameTransition(data);
+    });
+
+    this.socket.on('reconnect_failed', (data) => {
+      this.statusText.setText('❌ ' + data.message);
+      this.statusText.setColor('#ff4444');
+      // 清理 URL 参数，防止重复尝试
+      window.history.replaceState({}, '', window.location.pathname);
+      this._autoJoinRoom = null;
+      this._autoJoinNickname = null;
     });
 
     this.socket.on('game_start', (data) => {

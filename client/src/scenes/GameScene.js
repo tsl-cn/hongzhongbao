@@ -41,6 +41,15 @@ export default class GameScene extends Phaser.Scene {
     this.TILE_W = 60;         // 自摸手牌宽（主题增强版）
     this.TILE_H = 80;         // 自摸手牌高（主题增强版）
     this.HAND_Y = 515;        // 手牌下移0.7牌位 (72*0.7≈50)
+
+    // 倒计时
+    this.timerRemaining = 0;
+    this.timerActive = false;
+    this.timerEvent = null;
+
+    // AI托管状态 [东,南,西,北]
+    this.aiControlStates = [false, false, false, false];
+    this.aiButtonElements = {}; // {seatIdx: {container, bg, txt}}
   }
 
   create() {
@@ -89,15 +98,18 @@ export default class GameScene extends Phaser.Scene {
 
     // === 注册事件（重启时自动清理旧监听） ===
     this.events.once('shutdown', () => {
+      this._stopTimer();
+      this._cleanupAiPanel();
       this.socket.off('your_hand');
       this.socket.off('your_turn');
       this.socket.off('game_state_update');
       this.socket.off('game_over');
       this.socket.off('horse_bought');
-      this.socket.off('your_turn');
-      this.socket.off('your_hand');
       this.socket.off('game_start');
-      this.socket.off('game_state_update');
+      this.socket.off('ai_takeover');
+      this.socket.off('cancel_ai_takeover');
+      this.socket.off('player_disconnected');
+      this.socket.off('player_reconnected');
     });
     this._registerEvents();
 
@@ -106,6 +118,18 @@ export default class GameScene extends Phaser.Scene {
 
     // === 牌墙上方麦克风开关 ===
     this._createMicButton();
+
+    // === 倒计时数字（玩家手牌与左家手牌直角内侧） ===
+    this.timerText = this.add.text(160, 430, '', {
+      fontSize: '55px', color: '#ff8800', fontStyle: 'bold',
+      padding: { top: 2, bottom: 1 },
+    }).setOrigin(0.5).setDepth(15).setVisible(false);
+
+    // === 右上角分享按钮（wallText 正上方） ===
+    this._createShareBtn();
+
+    // === AI托管按钮（四方） ===
+    this._createAiControlButtons();
 
     // === 淡入动画（配合 LobbyScene 淡出） ===
     this._playFadeIn();
@@ -1029,6 +1053,10 @@ export default class GameScene extends Phaser.Scene {
       this._renderHand();         // 立即重绘，翻正牌面
       if (data.playerId === this.socket.playerId) {
         this.isMyTurn = true;
+        // 启动出牌倒计时
+        if (data.timeout) {
+          this._startTimer(data.timeout);
+        }
         // 轮到我了，检查暗杠
         const kongActions = this._findConcealedKongs();
         if (kongActions.length > 0) this._showActionButtons(kongActions);
@@ -1066,7 +1094,11 @@ export default class GameScene extends Phaser.Scene {
           if (kongActions.length > 0) this._showActionButtons(kongActions);
         } else {
           this.isMyTurn = false;
+          this._stopTimer(); // 不是我的回合，停止倒计时
         }
+      } else if (state.phase !== 'draw') {
+        // 非摸牌/出牌阶段，停止倒计时
+        this._stopTimer();
       }
     });
 
@@ -1094,6 +1126,34 @@ export default class GameScene extends Phaser.Scene {
     // 下一局：重新初始化场景
     this.socket.on('game_start', (data) => {
       this.scene.restart({ gameData: data });
+    });
+
+    // AI托管激活
+    this.socket.on('ai_takeover', (data) => {
+      if (data.seat !== undefined) {
+        this._updateAiButtonState(data.seat, true);
+      }
+    });
+
+    // AI托管取消
+    this.socket.on('cancel_ai_takeover', (data) => {
+      if (data.seat !== undefined) {
+        this._updateAiButtonState(data.seat, false);
+      }
+    });
+
+    // 玩家断线
+    this.socket.on('player_disconnected', (data) => {
+      if (data.seat !== undefined) {
+        this._updateAiButtonState(data.seat, true);
+      }
+    });
+
+    // 玩家重连
+    this.socket.on('player_reconnected', (data) => {
+      if (data.seat !== undefined) {
+        this._updateAiButtonState(data.seat, false);
+      }
     });
   }
 
@@ -1128,6 +1188,251 @@ export default class GameScene extends Phaser.Scene {
         }, 15);
     };
     createMic(false);
+  }
+
+  // ========== 倒计时 ==========
+
+  _startTimer(seconds) {
+    this._stopTimer();
+    this.timerRemaining = seconds;
+    this.timerActive = true;
+    this.timerText.setVisible(true).setText(`${seconds}`);
+
+    this.timerEvent = this.time.addEvent({
+      delay: 1000,
+      callback: () => {
+        this.timerRemaining--;
+        if (this.timerRemaining <= 0) {
+          this._stopTimer();
+          return;
+        }
+        // 颜色渐变：>15 橙黄，6-15 橙红，<6 红+闪烁
+        const color = this.timerRemaining > 15 ? '#ff8800'
+          : this.timerRemaining > 6 ? '#ff4400' : '#ff0000';
+        this.timerText.setColor(color);
+        this.timerText.setText(`${this.timerRemaining}`);
+        // 小于6秒闪烁
+        if (this.timerRemaining <= 6) {
+          this.timerText.setAlpha(this.timerRemaining % 2 === 0 ? 1 : 0.3);
+        }
+      },
+      loop: true,
+    });
+  }
+
+  _stopTimer() {
+    if (this.timerEvent) {
+      this.timerEvent.remove();
+      this.timerEvent = null;
+    }
+    this.timerActive = false;
+    this.timerRemaining = 0;
+    if (this.timerText) this.timerText.setVisible(false);
+  }
+
+  // ========== 分享按钮（右上角） ==========
+
+  _createShareBtn() {
+    const W = this.cameras.main.width;
+    const roomId = this.socket.roomId;
+    if (!roomId) return;
+
+    // 从 URL 获取已有参数（如密码）
+    const params = new URLSearchParams(window.location.search);
+    const password = params.get('password') || '';
+
+    this._makeRoundedBtn(W - 48, 16, 80, 28, 0x3a6a4e, '📋', '16px', '#ffffff', () => {
+      const host = window.location.host;
+      const playerName = this.socket.playerName || `玩家${Math.floor(Math.random() * 10000)}`;
+      const link = `http://${host}?room=${roomId}`
+        + (password ? `&password=${encodeURIComponent(password)}` : '')
+        + `&nickname=${encodeURIComponent(playerName)}`;
+
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(link).then(() => {
+          this._flashText('已复制房间链接', '#44ff44');
+        }).catch(() => {
+          this._flashText('复制失败，请手动复制', '#ff4444');
+        });
+      } else {
+        this._flashText('请手动复制链接', '#ffaa00');
+      }
+    }, 15);
+  }
+
+  /** 闪烁提示文字 */
+  _flashText(text, color) {
+    const W = this.cameras.main.width;
+    const flash = this.add.text(W / 2, 50, text, {
+      fontSize: '16px', color, fontStyle: 'bold',
+      padding: { top: 4, bottom: 2 },
+    }).setOrigin(0.5).setDepth(100);
+
+    this.tweens.add({
+      targets: flash,
+      alpha: 0,
+      y: 30,
+      duration: 1500,
+      ease: 'Power2',
+      onComplete: () => flash.destroy(),
+    });
+  }
+
+  // ========== AI托管按钮 ==========
+
+  _createAiControlButtons() {
+    const W = this.cameras.main.width;
+    const H = this.cameras.main.height;
+
+    for (let i = 0; i < 4; i++) {
+      const rel = (i - this.mySeat + 4) % 4;
+      let btnX, btnY;
+
+      // 风位字坐标（与 _renderPlayers 一致）
+      if (rel === 0) { btnX = W / 2; btnY = H - 39; }        // 自己
+      else if (rel === 2) { btnX = W / 2; btnY = 18; }        // 对家
+      else if (rel === 1) { btnX = W - 16; btnY = H / 2; }    // 右家
+      else { btnX = 16; btnY = H / 2; }                        // 左家
+
+      // 位置偏移：自己→左边，对家→右边，左右→上方
+      if (rel === 0) btnX -= 110;
+      else if (rel === 2) btnX += 110;
+      else btnY -= 28;
+
+      const isMe = (rel === 0);
+      const isActive = this.aiControlStates[i] || false;
+
+      const container = this.add.container(btnX, btnY).setDepth(10);
+
+      // 背景：不生效=黑底，生效=浅蓝底
+      const bgColor = isActive ? 0x4488cc : 0x222222;
+      const bg = this.add.graphics();
+      bg.fillStyle(bgColor, 0.9);
+      bg.fillRoundedRect(-16, -12, 32, 24, 4);
+      if (isActive) {
+        bg.lineStyle(1, 0x88ccff, 0.8);
+        bg.strokeRoundedRect(-16, -12, 32, 24, 4);
+      }
+      container.add(bg);
+
+      // 文字：生效=浅蓝底白字，不生效=黑底浅灰字
+      const txtColor = isActive ? '#ffffff' : '#888888';
+      const txt = this.add.text(0, 0, '托', {
+        fontSize: '18px', color: txtColor, fontStyle: 'bold',
+        padding: { top: 1, bottom: 0 },
+      }).setOrigin(0.5);
+      container.add(txt);
+
+      // 只有自己的按钮可点击
+      if (isMe) {
+        const hitZone = this.add.rectangle(0, 0, 40, 30, 0x000000, 0)
+          .setInteractive({ useHandCursor: true });
+        container.add(hitZone);
+
+        hitZone.on('pointerdown', () => {
+          if (this.aiControlStates[i]) {
+            // 已点亮 → 直接熄灭（退出托管）
+            this.socket.cancelAiTakeover();
+          } else {
+            // 未点亮 → 确认弹窗
+            this._showAiConfirmDialog();
+          }
+        });
+      }
+
+      this.aiButtonElements[i] = { container, bg, txt };
+    }
+  }
+
+  /** 更新单个座位的托管按钮状态 */
+  _updateAiButtonState(seat, active) {
+    this.aiControlStates[seat] = active;
+    const el = this.aiButtonElements[seat];
+    if (!el) return;
+
+    const bg = el.bg;
+    const txt = el.txt;
+
+    bg.clear();
+    if (active) {
+      bg.fillStyle(0x4488cc, 0.9);
+      bg.fillRoundedRect(-16, -12, 32, 24, 4);
+      bg.lineStyle(1, 0x88ccff, 0.8);
+      bg.strokeRoundedRect(-16, -12, 32, 24, 4);
+      txt.setColor('#ffffff');
+    } else {
+      bg.fillStyle(0x222222, 0.9);
+      bg.fillRoundedRect(-16, -12, 32, 24, 4);
+      txt.setColor('#888888');
+    }
+  }
+
+  /** AI托管确认弹窗（嵌入式，类似买马面板） */
+  _showAiConfirmDialog() {
+    if (this._aiDialogElements) return;
+
+    const W = this.cameras.main.width;
+    const H = this.cameras.main.height;
+    this._aiDialogElements = [];
+
+    // 手牌半透明
+    this.tileElements.forEach(t => t.setAlpha(0.3));
+    this._aiDialogElements.push({ destroy: () => this.tileElements.forEach(t => t.setAlpha(1)) });
+
+    const pw = 280, ph = 100;
+    const px = W / 2, py = H / 2;
+
+    const panelBg = this.add.graphics().setDepth(60);
+    panelBg.fillStyle(0x000000, 0.7);
+    panelBg.fillRoundedRect(px - pw / 2, py - ph / 2, pw, ph, 14);
+    panelBg.lineStyle(2, 0xffd700, 0.8);
+    panelBg.strokeRoundedRect(px - pw / 2, py - ph / 2, pw, ph, 14);
+    this._aiDialogElements.push(panelBg);
+
+    const title = this.add.text(px, py - 22, '🤖 AI托管', {
+      fontSize: '18px', color: '#ffd700', fontStyle: 'bold',
+    }).setOrigin(0.5).setDepth(61);
+    this._aiDialogElements.push(title);
+
+    const sub = this.add.text(px, py + 2, '由AI代打，单击「托」退出', {
+      fontSize: '12px', color: '#aaaaaa',
+    }).setOrigin(0.5).setDepth(61);
+    this._aiDialogElements.push(sub);
+
+    // 取消按钮
+    const cancelBtn = this.add.graphics().setDepth(61);
+    cancelBtn.fillStyle(0x555555, 1);
+    cancelBtn.fillRoundedRect(px - 80 - 35, py + 28, 70, 28, 6);
+    const cancelHit = this.add.rectangle(px - 80, py + 42, 70, 28, 0x000000, 0)
+      .setInteractive({ useHandCursor: true }).setDepth(62);
+    cancelHit.on('pointerdown', () => this._cleanupAiPanel());
+    const cancelText = this.add.text(px - 80, py + 42, '取消', {
+      fontSize: '14px', color: '#ffffff',
+    }).setOrigin(0.5).setDepth(62);
+    this._aiDialogElements.push(cancelBtn, cancelHit, cancelText);
+
+    // 确认按钮
+    const okBtn = this.add.graphics().setDepth(61);
+    okBtn.fillStyle(0x4488cc, 1);
+    okBtn.fillRoundedRect(px + 10, py + 28, 70, 28, 6);
+    const okHit = this.add.rectangle(px + 45, py + 42, 70, 28, 0x000000, 0)
+      .setInteractive({ useHandCursor: true }).setDepth(62);
+    okHit.on('pointerdown', () => {
+      this._cleanupAiPanel();
+      this.socket.requestAiTakeover();
+    });
+    const okText = this.add.text(px + 45, py + 42, '确定', {
+      fontSize: '14px', color: '#ffffff', fontStyle: 'bold',
+    }).setOrigin(0.5).setDepth(62);
+    this._aiDialogElements.push(okBtn, okHit, okText);
+  }
+
+  /** 清理AI托管确认弹窗 */
+  _cleanupAiPanel() {
+    if (this._aiDialogElements) {
+      this._aiDialogElements.forEach(e => e.destroy());
+      this._aiDialogElements = null;
+    }
   }
 
   // ========== 累计统计（跨局） ==========
@@ -1241,8 +1546,7 @@ export default class GameScene extends Phaser.Scene {
     this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.75).setDepth(depthBase);
 
     // 结算面板装饰背景（加大高度）
-    const hasHorseResults = data.horseResults && data.horseResults.some(h => h && h.results && h.results.length > 0);
-    const panelH = hasHorseResults ? 260 : 225;
+    const panelH = 260;
     const panelGfx = this.add.graphics().setDepth(depthBase);
     panelGfx.fillStyle(0x1a3a2e, 0.85);
     panelGfx.fillRoundedRect(W / 2 - 280, 22, 560, panelH, 8);
@@ -1290,46 +1594,64 @@ export default class GameScene extends Phaser.Scene {
       }
     }
 
-    // ====== 每人独立马牌结算明细（横排，下移0.7牌位） ======
+    // ====== 每人独立结算明细（横排） ======
     let horseY = 210;
     const colX = [W / 2 - 200, W / 2 - 65, W / 2 + 65, W / 2 + 200];
     if (data.horseResults) {
-      const withHorses = data.horseResults.filter(hr => hr && hr.results && hr.results.length > 0);
-      if (withHorses.length > 0) {
-        // 每家标题行（同一横排）
-        withHorses.forEach((hr, idx) => {
+      // 显示所有4家（每人必有胡牌番型）
+      const allResults = data.horseResults.filter(hr => hr !== null);
+      if (allResults.length > 0) {
+        // 每家标题行
+        allResults.forEach((hr, idx) => {
           const x = colX[idx] || (W / 2);
           const seatName = SEAT_NAMES[hr.seatIndex];
-          this.add.text(x, horseY, `🐴${seatName}(${hr.playerName})${hr.count}匹`, {
+          const horseLabel = hr.count > 0 ? `🐴${hr.count}匹` : '';
+          this.add.text(x, horseY, `${seatName}(${hr.playerName}) ${horseLabel}`, {
             fontSize: '12px', color: '#ffaa00', fontStyle: 'bold',
             padding: { top: 1, bottom: 0 },
           }).setOrigin(0.5).setDepth(depthBase + 1);
         });
         horseY += 16;
 
-        // 每张马牌明细行
-        const maxResults = Math.max(...withHorses.map(h => h.results.length));
-        for (let rIdx = 0; rIdx < maxResults; rIdx++) {
-          withHorses.forEach((hr, idx) => {
-            const x = colX[idx] || (W / 2);
-            const r = hr.results[rIdx];
-            if (!r) return;
-            const hitStr = r.isHit ? '✓' : '✗';
-            const adjStr = `${r.adjustment > 0 ? '+' : ''}${r.adjustment}`;
-            const color = r.isHit ? '#44ff44' : '#ff6666';
-            this.add.text(x, horseY, `${r.tileName}→${SEAT_NAMES[r.ownerSeat]}${hitStr}(${adjStr})`, {
-              fontSize: '11px', color, padding: { top: 0, bottom: 0 },
-            }).setOrigin(0.5).setDepth(depthBase + 1);
-          });
-          horseY += 14;
+        // 第一行：胡牌番型
+        allResults.forEach((hr, idx) => {
+          const x = colX[idx] || (W / 2);
+          const adj = hr.virtualAdjustment || 0;
+          const color = adj > 0 ? '#ffd700' : adj < 0 ? '#ff6666' : '#aaaaaa';
+          const str = `${adj > 0 ? '+' : ''}${adj}`;
+          this.add.text(x, horseY, `胡牌番型 ${str}`, {
+            fontSize: '11px', color, fontStyle: 'bold',
+            padding: { top: 0, bottom: 0 },
+          }).setOrigin(0.5).setDepth(depthBase + 1);
+        });
+        horseY += 14;
+
+        // 每张马牌明细行（仅限有实马的人）
+        const hasRealHorses = allResults.some(hr => hr.results && hr.results.length > 0);
+        if (hasRealHorses) {
+          const maxResults = Math.max(...allResults.map(h => h.results ? h.results.length : 0));
+          for (let rIdx = 0; rIdx < maxResults; rIdx++) {
+            allResults.forEach((hr, idx) => {
+              const x = colX[idx] || (W / 2);
+              const r = hr.results && hr.results[rIdx];
+              if (!r) return;
+              const hitStr = r.isHit ? '✓' : '✗';
+              const adjStr = `${r.adjustment > 0 ? '+' : ''}${r.adjustment}`;
+              const color = r.isHit ? '#44ff44' : '#ff6666';
+              this.add.text(x, horseY, `${r.tileName}→${SEAT_NAMES[r.ownerSeat]}${hitStr}(${adjStr})`, {
+                fontSize: '11px', color, padding: { top: 0, bottom: 0 },
+              }).setOrigin(0.5).setDepth(depthBase + 1);
+            });
+            horseY += 14;
+          }
         }
 
         // 小计行
-        withHorses.forEach((hr, idx) => {
+        allResults.forEach((hr, idx) => {
           const x = colX[idx] || (W / 2);
           const subColor = hr.pickerAdjustment > 0 ? '#44ff44' : hr.pickerAdjustment < 0 ? '#ff6666' : '#aaaaaa';
           const subStr = `${hr.pickerAdjustment > 0 ? '+' : ''}${hr.pickerAdjustment}`;
-          this.add.text(x, horseY, `🐴${subStr}`, {
+          this.add.text(x, horseY, `小计 ${subStr}`, {
             fontSize: '12px', color: subColor, fontStyle: 'bold',
             padding: { top: 1, bottom: 0 },
           }).setOrigin(0.5).setDepth(depthBase + 1);

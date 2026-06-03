@@ -23,6 +23,8 @@ class Player {
     this.discards = [];    // 弃牌记录
     this.isReady = false;  // 是否准备
     this.isConnected = true;
+    this.disconnected = false;  // 断线标记
+    this.aiControlled = false;   // AI 托管中
   }
 
   /** 获取手牌数量 */

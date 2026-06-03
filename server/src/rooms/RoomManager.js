@@ -251,6 +251,41 @@ class RoomManager {
     return this.rooms.get(roomId);
   }
 
+  /** 游戏中断线标记（不删除玩家，补AI） */
+  markDisconnectedInGame(playerId) {
+    const roomId = this.playerRoom.get(playerId);
+    if (!roomId) return null;
+    const room = this.rooms.get(roomId);
+    if (!room || room.status !== 'playing') return null;
+
+    const player = room.players.find(p => p.id === playerId);
+    if (!player) return null;
+
+    player.disconnected = true;
+    return { room, player };
+  }
+
+  /** 根据昵称在房间中找到玩家（用于重连） */
+  findPlayerByNickname(roomId, nickname) {
+    const room = this.rooms.get(roomId);
+    if (!room) return null;
+    return room.players.find(p => !p.isAI && p.name === nickname) || null;
+  }
+
+  /** 重连：挤掉AI，恢复真人控制 */
+  reconnectPlayer(roomId, player, newSocketId) {
+    const room = this.rooms.get(roomId);
+    if (!room) return false;
+
+    // 恢复真人控制
+    player.id = newSocketId;
+    player.disconnected = false;
+    player.aiControlled = false;
+    this.playerRoom.set(newSocketId, roomId);
+
+    return true;
+  }
+
   /** 获取所有等待中的房间列表 */
   getWaitingRooms() {
     const list = [];

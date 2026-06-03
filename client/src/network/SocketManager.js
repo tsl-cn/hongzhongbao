@@ -85,8 +85,14 @@ class SocketManager {
     this.emit('create_room', { name, password });
   }
 
+  /** 设置房间ID（收到 room_created/room_joined 后调用） */
+  setRoomId(roomId) {
+    this.roomId = roomId;
+  }
+
   joinRoom(roomId, name, password) {
     this.playerName = name;
+    this.roomId = roomId;
     this.emit('join_room', { roomId, name, password });
   }
 
@@ -122,6 +128,22 @@ class SocketManager {
 
   skipAction() {
     this.emit('skip_action');
+  }
+
+  /** ===== AI托管 API ===== */
+
+  requestAiTakeover() {
+    this.emit('ai_takeover');
+  }
+
+  cancelAiTakeover() {
+    this.emit('cancel_ai_takeover');
+  }
+
+  /** ===== 重连 API ===== */
+
+  reconnectGame(roomId, nickname) {
+    this.emit('reconnect_game', { roomId, nickname });
   }
 
   /** ===== 语音 API ===== */
