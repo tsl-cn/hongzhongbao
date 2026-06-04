@@ -631,10 +631,8 @@ function _activateAiTakeover(room, player) {
     auto: false,
   });
 
-  // 如果当前轮到该玩家，让AI立即决策
-  if (room.gameState.currentSeat === player.seatIndex) {
-    _triggerAITurn(room);
-  }
+  // 让AI检查是否需要决策（自己回合出牌，或者有待处理的碰杠胡）
+  _triggerAITurn(room);
 }
 
 /** 取消AI托管（手动点击熄灭） */
@@ -669,15 +667,19 @@ function _getOrCreateAI(player, room) {
 function _triggerAITurn(room) {
   // ACTION阶段：处理AI/托管人的碰/杠/胡决策
   if (room.gameState.phase === 'action' && room.gameState.actionQueue.length > 0) {
-    const firstAction = room.gameState.actionQueue[0];
-    const player = room.players[firstAction.seat];
-    if (player && (player.isAI || player.aiControlled)) {
+    // 找队列中第一个属于AI/托管人的操作
+    const aiAction = room.gameState.actionQueue.find(a => {
+      const p = room.players[a.seat];
+      return p && (p.isAI || p.aiControlled);
+    });
+    if (aiAction) {
+      const player = room.players[aiAction.seat];
       const ai = _getOrCreateAI(player, room);
       const roomId = room.id;
       const delay = player.isAI ? 300 + Math.random() * 300 : 200 + Math.random() * 300;
       setTimeout(() => {
         if (!roomManager.rooms.has(roomId)) return;
-        ai.decide({ type: 'action_available', availableActions: [firstAction] });
+        ai.decide({ type: 'action_available', availableActions: [aiAction] });
       }, delay);
     }
     return;
@@ -788,12 +790,8 @@ function _broadcastGameState(room, result) {
     const horseSettlement = [null, null, null, null];
 
     if (winner !== undefined && winner !== null) {
-      // ====== Step 1: 胡牌番型（替代原始番，仅胡家一匹虚拟中马） ======
-      //   胡家: +3×fan, 其他3家各 -fan
-      const virtualNet = [0, 0, 0, 0];
-      virtualNet[winner] += 3 * fan;
-      for (let o = 0; o < 4; o++) if (o !== winner) virtualNet[o] -= fan;
-
+      // ====== Step 1: 自风马 = 胡家有1匹虚拟中马（加入 results 明细） ======
+      //   胡家 +3×fan, 非胡家各 -1×fan
       // ====== Step 2: 实际买马（新规则） ======
       //   中马(owner=胡家):   owner+3, 其他3家各-1
       //   中马(owner≠胡家):   胡家0, owner+2, 其他2家各-1
@@ -801,6 +799,17 @@ function _broadcastGameState(room, result) {
       //   不中(owner=胡家):   0
       const realNet = [0, 0, 0, 0];
       const realDetails = [[], [], [], []];
+
+      // 自风马当作胡家买的1匹实马（中马），只推入胡家 results
+      realNet[winner] += 3 * fan;
+      for (let o = 0; o < 4; o++) if (o !== winner) realNet[o] -= fan;
+      realDetails[winner].push({
+        tileType: -1,
+        tileName: '自风马',
+        ownerSeat: winner,
+        isHit: true,
+        adjustment: 3 * fan,
+      });
       const playerNames = ['东', '南', '西', '北'];
 
       if (room.horseResults) {
@@ -812,65 +821,60 @@ function _broadcastGameState(room, result) {
 
           for (const r of settleResult.results) {
             const isHit = r.isHit;
-            let adj;
-
+            // 计算每匹马对四家的调整值，更新 realNet
             if (isHit) {
               if (i === winner) {
-                // 胡家自中: +3, 其他3家各-1
-                adj = 3 * fan;
-                realNet[i] += adj;
-                for (let o = 0; o < 4; o++) if (o !== i) realNet[o] -= fan;
+                // 胡家自中: 胡家+3f, 其他3家各-1f
+                realNet[winner] += 3 * fan;
+                for (let o = 0; o < 4; o++) if (o !== winner) realNet[o] -= fan;
               } else {
-                // 非胡家中: 马主+2(从2家各收1), 胡家0, 其他2家各-1
-                adj = 2 * fan;
-                realNet[i] += adj;
+                // 非胡家中: 马主+2f, 胡家0, 其他2家各-1f
+                realNet[i] += 2 * fan;
                 for (let o = 0; o < 4; o++) {
                   if (o !== i && o !== winner) realNet[o] -= fan;
                 }
-                // 胡家 0（不改动）
               }
             } else {
               if (i !== winner) {
-                // 非胡家不中: 马主-3(付全部3家各1), 其他3家各+1
-                adj = -3 * fan;
-                realNet[i] += adj;
+                // 非胡家不中: 马主-3f, 其他3家各+1f
+                realNet[i] -= 3 * fan;
                 for (let o = 0; o < 4; o++) if (o !== i) realNet[o] += fan;
-              } else {
-                // 胡家不中: 0
-                adj = 0;
               }
+              // 胡家不中: 不变
             }
 
+            // 这条马只推入买家的 results（其他三家的变动反映在 realNet 和小计中）
             realDetails[i].push({
               tileType: r.tileType,
               tileName: r.tileName,
               ownerSeat: r.ownerSeat,
               isHit,
-              adjustment: adj,
+              adjustment: isHit
+                ? (i === winner ? 3 * fan : 2 * fan)
+                : (i !== winner ? -3 * fan : 0),
             });
           }
         }
       }
 
-      // ====== Step 3: 合并结果（每人必有虚拟马） ======
+      // ====== Step 3: 合并结果（自风马已在 results 中含入） ======
       for (let i = 0; i < 4; i++) {
         const hr = room.horseResults ? room.horseResults[i] : null;
         const pName = hr ? hr.playerName : (state.players[i]?.name || playerNames[i]);
         const count = hr ? (hr.horses ? hr.horses.length : (hr.count || 0)) : 0;
-        const totalAdj = virtualNet[i] + realNet[i];
 
         horseSettlement[i] = {
           seatIndex: i,
           playerName: pName,
           count,
-          virtualAdjustment: virtualNet[i],
+          virtualAdjustment: 0,
           results: realDetails[i],
-          pickerAdjustment: totalAdj,
+          pickerAdjustment: realNet[i],
         };
       }
 
       // 校验：总和必须为0
-      const checkTotal = virtualNet.reduce((a, b) => a + b, 0) + realNet.reduce((a, b) => a + b, 0);
+      const checkTotal = realNet.reduce((a, b) => a + b, 0);
       if (checkTotal !== 0) {
         console.error(`🚨 结算不平衡! total=${checkTotal}, fan=${fan}, winner=${winner}`);
       }

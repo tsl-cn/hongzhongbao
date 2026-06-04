@@ -190,6 +190,9 @@ class RoomManager {
 
     room.status = 'playing';
 
+    // 重置上一局的AI托管标记
+    room.players.forEach(p => { p.aiControlled = false; p.disconnected = false; });
+
     // 创建游戏状态
     const gameState = new GameState(room.players);
     room.gameState = gameState;
@@ -213,6 +216,9 @@ class RoomManager {
     }
 
     room.status = 'playing';
+
+    // 重置上一局的AI托管标记
+    room.players.forEach(p => { p.aiControlled = false; p.disconnected = false; });
 
     // 沿用同一个 GameState，保留 windDealer
     const gameState = room.gameState || new GameState(room.players);

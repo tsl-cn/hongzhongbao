@@ -40,7 +40,7 @@ export default class GameScene extends Phaser.Scene {
 
     this.TILE_W = 60;         // 自摸手牌宽（主题增强版）
     this.TILE_H = 80;         // 自摸手牌高（主题增强版）
-    this.HAND_Y = 515;        // 手牌下移0.7牌位 (72*0.7≈50)
+    this.HAND_Y = 510;        // 手牌上移5px
 
     // 倒计时
     this.timerRemaining = 0;
@@ -1078,10 +1078,16 @@ export default class GameScene extends Phaser.Scene {
         this._renderMelds(data.players);
       }
 
-      // 可操作按钮
+      // 可操作按钮（无匹配时清除旧按钮，防AI托管后的残留）
       if (state.actionQueue && state.actionQueue.length > 0) {
         const myActions = state.actionQueue.filter(a => a.seat === this.mySeat);
-        if (myActions.length > 0) this._showActionButtons(myActions);
+        if (myActions.length > 0) {
+          this._showActionButtons(myActions);
+        } else {
+          this._clearActions();
+        }
+      } else {
+        this._clearActions();
       }
 
       // 轮到我出牌
@@ -1297,7 +1303,7 @@ export default class GameScene extends Phaser.Scene {
       // 位置偏移：自己→左边，对家→右边，左右→上方
       if (rel === 0) btnX -= 110;
       else if (rel === 2) btnX += 110;
-      else btnY -= 28;
+      else btnY -= 48;  // 左右家托键上移20px
 
       const isMe = (rel === 0);
       const isActive = this.aiControlStates[i] || false;
@@ -1441,29 +1447,13 @@ export default class GameScene extends Phaser.Scene {
   _updateCumulativeStats(data) {
     if (!this.game.cumulativeStats) this.game.cumulativeStats = {};
     const stats = this.game.cumulativeStats;
-    const result = data.result;
-    if (!result || !result.payments) return;
 
-    // 计算各玩家本轮净输赢（牌局部分），用玩家昵称做key
+    // 马牌结算已包含手牌输赢+实马，直接取 pickerAdjustment
     const roundNet = {};
-    let totalWinnerGain = 0;
-    for (const [seatName, p] of Object.entries(result.payments)) {
-      const playerName = p.playerName || seatName;
-      roundNet[playerName] = -(p.pay || 0);
-      totalWinnerGain += (p.pay || 0);
-    }
-    if (result.winner !== undefined) {
-      const winnerPlayerName = result.winnerName
-        || this.players[result.winner]?.name
-        || SEAT_NAMES[result.winner];
-      roundNet[winnerPlayerName] = totalWinnerGain;
-    }
-
-    // 马牌调整：每人独立马牌输赢
     if (data.horseResults) {
       data.horseResults.forEach((hr) => {
-        if (!hr || hr.pickerAdjustment === 0) return;
-        roundNet[hr.playerName] = (roundNet[hr.playerName] || 0) + hr.pickerAdjustment;
+        if (!hr) return;
+        roundNet[hr.playerName] = (roundNet[hr.playerName] || 0) + (hr.pickerAdjustment || 0);
       });
     }
 
@@ -1482,6 +1472,14 @@ export default class GameScene extends Phaser.Scene {
       stats[name].total += net;
       stats[name].rounds.push(net);
     }
+
+    // 归一化累计总和为0（消除历史累积误差）
+    const allTotals = Object.values(stats).map(s => s.total);
+    const totalSum = allTotals.reduce((a, b) => a + b, 0);
+    if (totalSum !== 0 && Object.keys(stats).length > 0) {
+      const firstName = Object.keys(stats)[0];
+      stats[firstName].total -= totalSum;
+    }
   }
 
   /** 渲染统计表 */
@@ -1499,31 +1497,31 @@ export default class GameScene extends Phaser.Scene {
     }).setOrigin(0.5).setDepth(depthBase + 1);
     y += 30;
 
-    // 表头列名
-    this.add.text(W / 2 - 120, y, '玩家', {
+    // 表头列名（列宽拉大，"累计"右移）
+    this.add.text(W / 2 - 140, y, '玩家', {
       fontSize: '20px', color: '#aaaaaa', padding: { top: 3 },
     }).setOrigin(0, 0.5).setDepth(depthBase + 1);
     this.add.text(W / 2 + 10, y, '本轮(含马)', {
       fontSize: '20px', color: '#aaaaaa', padding: { top: 3 },
     }).setOrigin(0.5).setDepth(depthBase + 1);
-    this.add.text(W / 2 + 80, y, '累计', {
+    this.add.text(W / 2 + 130, y, '累计', {
       fontSize: '20px', color: '#aaaaaa', padding: { top: 3 },
     }).setOrigin(0.5).setDepth(depthBase + 1);
-    y += 30;
+    y += 26;
 
     for (const [name, s] of Object.entries(stats)) {
       const lastRound = s.rounds.length > 0 ? s.rounds[s.rounds.length - 1] : 0;
       const color = s.total > 0 ? '#44ff44' : s.total < 0 ? '#ff4444' : '#ffffff';
-      this.add.text(W / 2 - 120, y, name, {
-        fontSize: '22px', color, padding: { top: 3 },
+      this.add.text(W / 2 - 140, y, name, {
+        fontSize: '22px', color, fontStyle: 'bold', padding: { top: 2 },
       }).setOrigin(0, 0.5).setDepth(depthBase + 1);
       this.add.text(W / 2 + 10, y, `${lastRound > 0 ? '+' : ''}${lastRound}`, {
-        fontSize: '22px', color: lastRound > 0 ? '#44ff44' : '#ff4444', padding: { top: 3 },
+        fontSize: '22px', color: lastRound > 0 ? '#44ff44' : '#ff4444', fontStyle: 'bold', padding: { top: 2 },
       }).setOrigin(0.5).setDepth(depthBase + 1);
-      this.add.text(W / 2 + 80, y, `${s.total > 0 ? '+' : ''}${s.total}`, {
-        fontSize: '22px', color, padding: { top: 3 },
+      this.add.text(W / 2 + 130, y, `${s.total > 0 ? '+' : ''}${s.total}`, {
+        fontSize: '22px', color, fontStyle: 'bold', padding: { top: 2 },
       }).setOrigin(0.5).setDepth(depthBase + 1);
-      y += 30;
+      y += 26;
     }
 
     return y; // 返回结束Y，供后续布局使用
@@ -1545,13 +1543,22 @@ export default class GameScene extends Phaser.Scene {
     // 半透明背景遮罩
     this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.75).setDepth(depthBase);
 
-    // 结算面板装饰背景（加大高度）
-    const panelH = 260;
+    // ====== 结算面板（高度动态适配内容） ======
+    const horseResultsArr = data.horseResults ? data.horseResults.filter(hr => hr !== null) : [];
+    const maxResults = horseResultsArr.length > 0
+      ? Math.max(...horseResultsArr.map(hr => (hr.results ? hr.results.length : 0)))
+      : 1;
+    // panelStartY = 128（title 在 145，留顶上边距）
+    // panelHeight = 121 + maxResults * 14
+    //   121 = 标题行(16) + 小计行(18) + 启动偏移(210-128=82) + 边距(5)
+    //   14  = 每行马牌高度
+    const panelStartY = 128;
+    const panelHeight = 121 + maxResults * 14;
     const panelGfx = this.add.graphics().setDepth(depthBase);
     panelGfx.fillStyle(0x1a3a2e, 0.85);
-    panelGfx.fillRoundedRect(W / 2 - 280, 22, 560, panelH, 8);
+    panelGfx.fillRoundedRect(W / 2 - 280, panelStartY, 560, panelHeight, 8);
     panelGfx.lineStyle(2, 0x4a8a5e, 0.6);
-    panelGfx.strokeRoundedRect(W / 2 - 280, 22, 560, panelH, 8);
+    panelGfx.strokeRoundedRect(W / 2 - 280, panelStartY, 560, panelHeight, 8);
 
     // ====== 标题：胡牌信息（下移0.7牌位 ≈ 50px） ======
     let msg = '';
@@ -1598,7 +1605,7 @@ export default class GameScene extends Phaser.Scene {
     let horseY = 210;
     const colX = [W / 2 - 200, W / 2 - 65, W / 2 + 65, W / 2 + 200];
     if (data.horseResults) {
-      // 显示所有4家（每人必有胡牌番型）
+      // 显示所有4家（每人必有手牌输赢）
       const allResults = data.horseResults.filter(hr => hr !== null);
       if (allResults.length > 0) {
         // 每家标题行
@@ -1613,22 +1620,8 @@ export default class GameScene extends Phaser.Scene {
         });
         horseY += 16;
 
-        // 第一行：胡牌番型
-        allResults.forEach((hr, idx) => {
-          const x = colX[idx] || (W / 2);
-          const adj = hr.virtualAdjustment || 0;
-          const color = adj > 0 ? '#ffd700' : adj < 0 ? '#ff6666' : '#aaaaaa';
-          const str = `${adj > 0 ? '+' : ''}${adj}`;
-          this.add.text(x, horseY, `胡牌番型 ${str}`, {
-            fontSize: '11px', color, fontStyle: 'bold',
-            padding: { top: 0, bottom: 0 },
-          }).setOrigin(0.5).setDepth(depthBase + 1);
-        });
-        horseY += 14;
-
-        // 每张马牌明细行（仅限有实马的人）
-        const hasRealHorses = allResults.some(hr => hr.results && hr.results.length > 0);
-        if (hasRealHorses) {
+        // 每张马牌明细行（含自风马 + 实马）
+        {
           const maxResults = Math.max(...allResults.map(h => h.results ? h.results.length : 0));
           for (let rIdx = 0; rIdx < maxResults; rIdx++) {
             allResults.forEach((hr, idx) => {
@@ -1760,22 +1753,54 @@ export default class GameScene extends Phaser.Scene {
           el.setDepth(depthBase + 2);
         });
 
-        // 副露（碰/杠）横向对齐排列，与牌墙间隔半个牌位
+        // 副露（碰/杠）与手牌同排，间隔3px，注明来源风位和杠类型
         if (p.melds && p.melds.length > 0) {
-          const halfGap = Math.floor(tileW / 2);
           const mStep = tileW + gap;
-          let meldOffset = count * mStep + halfGap;
+          const meldGap = 3; // 组间距3px
+          let meldOffset = 0;
+
+          // 计算手牌总宽度，从手牌末尾开始
+          if (dirX !== 0) meldOffset = count * mStep + meldGap;
+          else meldOffset = count * (tileH + gap) + meldGap;
+
           p.melds.forEach((meld) => {
             const tiles = meld.tiles || [];
+            const isConcealed = meld.type === 'concealed_kong';
+            const isKong = meld.type === 'exposed_kong' || meld.type === 'concealed_kong';
+
+            // 碰杠牌与手牌同方向排列
             tiles.forEach((mt, mi) => {
-              // 所有碰杠牌横向排列（向右延伸），无论牌墙方向
-              const mx = baseX + meldOffset + mi * mStep;
-              const my = baseY;
-              const showFace = !(meld.type === 'concealed_kong');
+              const mx = baseX + (dirX !== 0 ? meldOffset + mi * mStep : 0);
+              const my = baseY + (dirY !== 0 ? meldOffset + mi * (tileH + gap) : 0);
+              const showFace = !(isConcealed);
               const meldEl = TileRenderer.createTile(this, showFace ? mt : 0, mx, my, tileW, tileH, !showFace);
               meldEl.setDepth(depthBase + 2);
             });
-            meldOffset += tiles.length * mStep + 4; // 每组副露之间留间距
+
+            // 标注来源和类型（碰/明杠/暗杠）
+            const labelY = baseY + (dirX !== 0 ? -6 : 0); // 水平排列在牌上方
+            const labelX = baseX + (dirX !== 0 ? meldOffset : meldOffset - 4);
+            let label = '';
+            if (meld.type === 'pong') {
+              label = `碰${meld.from !== undefined ? '·' + SEAT_NAMES[meld.from] : ''}`;
+            } else if (meld.type === 'exposed_kong') {
+              label = `明杠${meld.from !== undefined ? '·' + SEAT_NAMES[meld.from] : ''}`;
+            } else if (meld.type === 'concealed_kong') {
+              label = `暗杠`;
+            }
+
+            // 在牌组上方/左侧显示小字标签
+            const lblX = dirX !== 0 ? labelX : labelY;
+            const lblY = dirX !== 0 ? labelY : labelX - tileH;
+            const t = this.add.text(lblX, lblY, label, {
+              fontSize: '9px', color: '#ffaa00',
+              padding: { top: 0, bottom: 0 },
+            }).setOrigin(dirX !== 0 ? 0 : 1, dirX !== 0 ? 1 : 0.5).setDepth(depthBase + 3);
+            // t不会被清理（因为不放在数组里），但它是直接在场景上的
+
+            // 更新偏移：组间距3px
+            if (dirX !== 0) meldOffset += tiles.length * mStep + meldGap;
+            else meldOffset += tiles.length * (tileH + gap) + meldGap;
           });
         }
       });
