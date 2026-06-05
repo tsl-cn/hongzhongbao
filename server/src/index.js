@@ -13,6 +13,7 @@ const RoomManager = require('./rooms/RoomManager');
 const AiPlayer = require('./ai/AiPlayer');
 const { createAiView } = require('./ai/AiView');
 const HorseBuyer = require('./game/HorseBuyer');
+const SettlementEngine = require('./game/SettlementEngine');
 const { TILE_NAMES, isWild } = require('./game/TileDef');
 
 const app = express();
@@ -781,104 +782,29 @@ function _broadcastGameState(room, result) {
     }
   }
 
-  // 如果是结算阶段
+  // 如果是结算阶段（使用4层结算引擎）
   if (state.phase === 'settle') {
     _clearDiscardTimer(room);
 
     const winner = state.result?.winner;
-    const fan = state.result?.fan || 3;
-    const horseSettlement = [null, null, null, null];
+    const fan = state.result?.fan || 0;
+    let horseSettlement = [null, null, null, null];
 
-    if (winner !== undefined && winner !== null) {
-      // ====== Step 1: 自风马 = 胡家有1匹虚拟中马（加入 results 明细） ======
-      //   胡家 +3×fan, 非胡家各 -1×fan
-      // ====== Step 2: 实际买马（新规则） ======
-      //   中马(owner=胡家):   owner+3, 其他3家各-1
-      //   中马(owner≠胡家):   胡家0, owner+2, 其他2家各-1
-      //   不中(owner≠胡家):   owner-3, 其他3家各+1
-      //   不中(owner=胡家):   0
-      const realNet = [0, 0, 0, 0];
-      const realDetails = [[], [], [], []];
-
-      // 自风马当作胡家买的1匹实马（中马），只推入胡家 results
-      realNet[winner] += 3 * fan;
-      for (let o = 0; o < 4; o++) if (o !== winner) realNet[o] -= fan;
-      realDetails[winner].push({
-        tileType: -1,
-        tileName: '自风马',
-        ownerSeat: winner,
-        isHit: true,
-        adjustment: 3 * fan,
+    if (winner !== undefined && winner !== null && fan > 0) {
+      const settlement = SettlementEngine.settle({
+        winner,
+        fan_w: fan,
+        players: state.players,
+        horseResults: room.horseResults || null,
+        playerNames: ['东', '南', '西', '北'],
       });
-      const playerNames = ['东', '南', '西', '北'];
 
-      if (room.horseResults) {
-        for (let i = 0; i < 4; i++) {
-          const hr = room.horseResults[i];
-          if (!hr || !hr.horses || hr.horses.length === 0) continue;
+      horseSettlement = settlement.horseSettlement;
 
-          const settleResult = HorseBuyer.settleHorses(hr.horses, winner, fan, i);
-
-          for (const r of settleResult.results) {
-            const isHit = r.isHit;
-            // 计算每匹马对四家的调整值，更新 realNet
-            if (isHit) {
-              if (i === winner) {
-                // 胡家自中: 胡家+3f, 其他3家各-1f
-                realNet[winner] += 3 * fan;
-                for (let o = 0; o < 4; o++) if (o !== winner) realNet[o] -= fan;
-              } else {
-                // 非胡家中: 马主+2f, 胡家0, 其他2家各-1f
-                realNet[i] += 2 * fan;
-                for (let o = 0; o < 4; o++) {
-                  if (o !== i && o !== winner) realNet[o] -= fan;
-                }
-              }
-            } else {
-              if (i !== winner) {
-                // 非胡家不中: 马主-3f, 其他3家各+1f
-                realNet[i] -= 3 * fan;
-                for (let o = 0; o < 4; o++) if (o !== i) realNet[o] += fan;
-              }
-              // 胡家不中: 不变
-            }
-
-            // 这条马只推入买家的 results（其他三家的变动反映在 realNet 和小计中）
-            realDetails[i].push({
-              tileType: r.tileType,
-              tileName: r.tileName,
-              ownerSeat: r.ownerSeat,
-              isHit,
-              adjustment: isHit
-                ? (i === winner ? 3 * fan : 2 * fan)
-                : (i !== winner ? -3 * fan : 0),
-            });
-          }
-        }
-      }
-
-      // ====== Step 3: 合并结果（自风马已在 results 中含入） ======
-      for (let i = 0; i < 4; i++) {
-        const hr = room.horseResults ? room.horseResults[i] : null;
-        const pName = hr ? hr.playerName : (state.players[i]?.name || playerNames[i]);
-        const count = hr ? (hr.horses ? hr.horses.length : (hr.count || 0)) : 0;
-
-        horseSettlement[i] = {
-          seatIndex: i,
-          playerName: pName,
-          count,
-          virtualAdjustment: 0,
-          results: realDetails[i],
-          pickerAdjustment: realNet[i],
-        };
-      }
-
-      // 校验：总和必须为0
-      const checkTotal = realNet.reduce((a, b) => a + b, 0);
-      if (checkTotal !== 0) {
-        console.error(`🚨 结算不平衡! total=${checkTotal}, fan=${fan}, winner=${winner}`);
-      }
+      // 更新 result.payments 为结算引擎的实际值
+      state.result.payments = settlement.payments;
     }
+
     _broadcastToRoom(room.id, 'game_over', {
       result: state.result,
       horseResults: horseSettlement,
