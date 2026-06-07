@@ -1497,31 +1497,31 @@ export default class GameScene extends Phaser.Scene {
     }).setOrigin(0.5).setDepth(depthBase + 1);
     y += 30;
 
-    // 表头列名（列宽拉大，"累计"右移）
-    this.add.text(W / 2 - 140, y, '玩家', {
-      fontSize: '20px', color: '#aaaaaa', padding: { top: 3 },
+    // 表头列名（列宽拉大，防重叠）
+    this.add.text(W / 2 - 160, y, '玩家', {
+      fontSize: '18px', color: '#aaaaaa', padding: { top: 3 },
     }).setOrigin(0, 0.5).setDepth(depthBase + 1);
-    this.add.text(W / 2 + 10, y, '本轮(含马)', {
-      fontSize: '20px', color: '#aaaaaa', padding: { top: 3 },
+    this.add.text(W / 2 + 30, y, '本轮(含马)', {
+      fontSize: '18px', color: '#aaaaaa', padding: { top: 3 },
     }).setOrigin(0.5).setDepth(depthBase + 1);
-    this.add.text(W / 2 + 130, y, '累计', {
-      fontSize: '20px', color: '#aaaaaa', padding: { top: 3 },
+    this.add.text(W / 2 + 150, y, '累计', {
+      fontSize: '18px', color: '#aaaaaa', padding: { top: 3 },
     }).setOrigin(0.5).setDepth(depthBase + 1);
     y += 26;
 
     for (const [name, s] of Object.entries(stats)) {
       const lastRound = s.rounds.length > 0 ? s.rounds[s.rounds.length - 1] : 0;
       const color = s.total > 0 ? '#44ff44' : s.total < 0 ? '#ff4444' : '#ffffff';
-      this.add.text(W / 2 - 140, y, name, {
-        fontSize: '22px', color, fontStyle: 'bold', padding: { top: 2 },
+      this.add.text(W / 2 - 160, y, name, {
+        fontSize: '20px', color, fontStyle: 'bold', padding: { top: 4 },
       }).setOrigin(0, 0.5).setDepth(depthBase + 1);
-      this.add.text(W / 2 + 10, y, `${lastRound > 0 ? '+' : ''}${lastRound}`, {
-        fontSize: '22px', color: lastRound > 0 ? '#44ff44' : '#ff4444', fontStyle: 'bold', padding: { top: 2 },
+      this.add.text(W / 2 + 30, y, `${lastRound > 0 ? '+' : ''}${lastRound}`, {
+        fontSize: '20px', color: lastRound > 0 ? '#44ff44' : '#ff4444', fontStyle: 'bold', padding: { top: 4 },
       }).setOrigin(0.5).setDepth(depthBase + 1);
-      this.add.text(W / 2 + 130, y, `${s.total > 0 ? '+' : ''}${s.total}`, {
-        fontSize: '22px', color, fontStyle: 'bold', padding: { top: 2 },
+      this.add.text(W / 2 + 150, y, `${s.total > 0 ? '+' : ''}${s.total}`, {
+        fontSize: '20px', color, fontStyle: 'bold', padding: { top: 4 },
       }).setOrigin(0.5).setDepth(depthBase + 1);
-      y += 26;
+      y += 28;
     }
 
     return y; // 返回结束Y，供后续布局使用
@@ -1548,12 +1548,9 @@ export default class GameScene extends Phaser.Scene {
     const maxResults = horseResultsArr.length > 0
       ? Math.max(...horseResultsArr.map(hr => (hr.results ? hr.results.length : 0)))
       : 1;
-    // panelStartY = 128（title 在 145，留顶上边距）
-    // panelHeight = 121 + maxResults * 14
-    //   121 = 标题行(16) + 小计行(18) + 启动偏移(210-128=82) + 边距(5)
-    //   14  = 每行马牌高度
     const panelStartY = 128;
-    const panelHeight = 121 + maxResults * 14;
+    // horseY starts at 220, title rows + subtotal ≈ 130, each horse row = 18
+    const panelHeight = 130 + maxResults * 18;
     const panelGfx = this.add.graphics().setDepth(depthBase);
     panelGfx.fillStyle(0x1a3a2e, 0.85);
     panelGfx.fillRoundedRect(W / 2 - 280, panelStartY, 560, panelHeight, 8);
@@ -1587,23 +1584,26 @@ export default class GameScene extends Phaser.Scene {
         padding: { top: 3, bottom: 1 },
       }).setOrigin(0.5).setDepth(depthBase + 1);
 
-      // 赔付详情
-      if (data.result.payments) {
-        const entries = Object.entries(data.result.payments)
-          .filter(([s, p]) => !data.result.isRobbingKong || p.pay > 0);
-        const payLine = entries
-          .map(([s, p]) => `${p.playerName}: -${p.pay}番`)
-          .join('  ');
-        this.add.text(W / 2, 190, `💰 ${payLine}`, {
-          fontSize: '14px', color: '#ffdd88',
-          padding: { top: 3, bottom: 1 },
+      // 各家净收支概览
+      if (data.horseResults) {
+        const netLines = data.horseResults
+          .filter(hr => hr !== null)
+          .map(hr => {
+            const v = hr.pickerAdjustment;
+            const sign = v > 0 ? '+' : v < 0 ? '' : '';
+            return `${hr.playerName}: ${sign}${v}`;
+          })
+          .join('  |  ');
+        this.add.text(W / 2, 192, netLines, {
+          fontSize: '16px', color: '#ffdd88', fontStyle: 'bold',
+          padding: { top: 4, bottom: 1 },
         }).setOrigin(0.5).setDepth(depthBase + 1);
       }
     }
 
     // ====== 每人独立结算明细（横排） ======
-    let horseY = 210;
-    const colX = [W / 2 - 200, W / 2 - 65, W / 2 + 65, W / 2 + 200];
+    let horseY = 220;
+    const colX = [W / 2 - 215, W / 2 - 72, W / 2 + 72, W / 2 + 215];
     if (data.horseResults) {
       // 显示所有4家（每人必有手牌输赢）
       const allResults = data.horseResults.filter(hr => hr !== null);
@@ -1614,11 +1614,11 @@ export default class GameScene extends Phaser.Scene {
           const seatName = SEAT_NAMES[hr.seatIndex];
           const horseLabel = hr.count > 0 ? `🐴${hr.count}匹` : '';
           this.add.text(x, horseY, `${seatName}(${hr.playerName}) ${horseLabel}`, {
-            fontSize: '12px', color: '#ffaa00', fontStyle: 'bold',
-            padding: { top: 1, bottom: 0 },
+            fontSize: '13px', color: '#ffaa00', fontStyle: 'bold',
+            padding: { top: 2, bottom: 2 },
           }).setOrigin(0.5).setDepth(depthBase + 1);
         });
-        horseY += 16;
+        horseY += 18;
 
         // 每张马牌明细行（含自风马 + 实马）
         {
@@ -1628,14 +1628,13 @@ export default class GameScene extends Phaser.Scene {
               const x = colX[idx] || (W / 2);
               const r = hr.results && hr.results[rIdx];
               if (!r) return;
-              const hitStr = r.isHit ? '✓' : '✗';
               const adjStr = `${r.adjustment > 0 ? '+' : ''}${r.adjustment}`;
-              const color = r.isHit ? '#44ff44' : '#ff6666';
-              this.add.text(x, horseY, `${r.tileName}→${SEAT_NAMES[r.ownerSeat]}${hitStr}(${adjStr})`, {
-                fontSize: '11px', color, padding: { top: 0, bottom: 0 },
+              const color = r.adjustment > 0 ? '#44ff44' : r.adjustment < 0 ? '#ff6666' : '#aaaaaa';
+              this.add.text(x, horseY, `${r.tileName}→${SEAT_NAMES[r.ownerSeat]}(${adjStr})`, {
+                fontSize: '12px', color, padding: { top: 1, bottom: 1 },
               }).setOrigin(0.5).setDepth(depthBase + 1);
             });
-            horseY += 14;
+            horseY += 18;
           }
         }
 
@@ -1645,11 +1644,11 @@ export default class GameScene extends Phaser.Scene {
           const subColor = hr.pickerAdjustment > 0 ? '#44ff44' : hr.pickerAdjustment < 0 ? '#ff6666' : '#aaaaaa';
           const subStr = `${hr.pickerAdjustment > 0 ? '+' : ''}${hr.pickerAdjustment}`;
           this.add.text(x, horseY, `小计 ${subStr}`, {
-            fontSize: '12px', color: subColor, fontStyle: 'bold',
-            padding: { top: 1, bottom: 0 },
+            fontSize: '14px', color: subColor, fontStyle: 'bold',
+            padding: { top: 3, bottom: 2 },
           }).setOrigin(0.5).setDepth(depthBase + 1);
         });
-        horseY += 18;
+        horseY += 22;
       }
     }
 
