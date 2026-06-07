@@ -261,8 +261,8 @@ export default class GameScene extends Phaser.Scene {
             // 右家：左移0.2牌位≈11px (累计 -4→-15)
             tx = x - 15; ty = y - 22;
           } else {
-            // 左边家：风位字上方0.3牌位
-            tx = x; ty = y - 22;
+            // 左边家：风位字上方0.3牌位，右移3px
+            tx = x + 3; ty = y - 22;
           }
           const totalLabel = this.add.text(tx, ty, totalStr, {
             fontSize: '26px', color: totalColor, fontStyle: 'bold',
@@ -535,7 +535,7 @@ export default class GameScene extends Phaser.Scene {
     this._horseElements.push(bannerText);
   }
 
-  /** 显示四家马牌（扣牌，各自靠近桌边） */
+  /** 显示四家马牌（各自放在手牌角落，旋转同方向） */
   _showHorseTiles(horseCounts) {
     if (!horseCounts) return;
     const W = this.cameras.main.width;
@@ -543,7 +543,7 @@ export default class GameScene extends Phaser.Scene {
 
     if (this.horseTiles) this.horseTiles.forEach(t => t.destroy());
     this.horseTiles = [];
-    const hW = 24, hH = 32, hGap = 2;
+    const hW = 24, hH = 32, hGap = 1;
 
     horseCounts.forEach((count, seatIdx) => {
       if (!count || count <= 0) return;
@@ -552,25 +552,33 @@ export default class GameScene extends Phaser.Scene {
 
       let startX, startY, dirX, dirY, angle = 0;
       if (rel === 0) {
-        // 自己：不变
-        startX = 148; startY = H - 27; dirX = 1; dirY = 0;
-      } else if (rel === 3 && hb) {
-        // 左家：手牌同一竖列上方，间隔1牌位，方向与手牌一致；左移0.2牌位
-        startX = hb.x - Math.floor(0.2 * 54);
-        startY = hb.topY - hH - count * hH - (count - 1) * hGap;
-        dirX = 0; dirY = 1; angle = 90;
-      } else if (rel === 1 && hb) {
-        // 右家：手牌同一竖列下方，间隔1牌位，方向与手牌一致；右移0.2牌位
-        startX = hb.x + Math.floor(0.2 * 54);
-        startY = hb.bottomY + hH + hH / 2;
-        dirX = 0; dirY = 1; angle = -90;
-      } else if (rel === 2 && hb) {
-        // 对家：手牌同一横排右侧，间隔1牌位；上移0.2牌位
-        startX = hb.rightX + hW;
-        startY = hb.y - Math.floor(0.2 * 72);
+        // 自己：第14张右边缘下方，上移20px，水平向右
+        const rightEdge = (this._tile12Anchor || 0) + this.TILE_W / 2 + 15;
+        startX = rightEdge + 4;
+        startY = this.HAND_Y + this.TILE_H + 4 - 20;
         dirX = 1; dirY = 0;
+      } else if (rel === 2 && hb) {
+        // 对家：手牌左上，贴上桌边，横排向右
+        const leftEdge = hb.rightX - 13 * (hb.oW + 1);
+        startX = leftEdge;
+        startY = 4;
+        dirX = 1; dirY = 0;
+      } else if (rel === 3 && hb) {
+        // 左家：手牌左下，下移200px右移20px，竖排向上
+        const bottomY = hb.topY + 12 * (hb.oW + 1);
+        startX = 4 + 20;
+        startY = bottomY - hH + 200;
+        dirX = 0; dirY = -1;
+        angle = 90;
+      } else if (rel === 1 && hb) {
+        // 右家：手牌右上，左移20px，竖排向上
+        const topY = hb.bottomY - 12 * (hb.oW + 1);
+        startX = (W - hW - 4) - 20;
+        startY = topY - hH;
+        dirX = 0; dirY = -1;
+        angle = -90;
       } else {
-        startX = 0; startY = 0; dirX = 0; dirY = 0;
+        startX = 0; startY = 0; dirX = 1; dirY = 0;
       }
 
       for (let h = 0; h < count; h++) {
@@ -611,8 +619,6 @@ export default class GameScene extends Phaser.Scene {
     // 固定锚点：第13张牌（已排序的第12位）右边缘固定
     if (!this._tile12Anchor) {
       this._tile12Anchor = Math.floor(W / 2 + 6 * TILE_STEP + this.TILE_W / 2);
-      // 碰杠起点：原手牌第1张的左边缘（meld 从此处开始向左排）
-      this._meldAnchorX = this._tile12Anchor - this.TILE_W / 2 - 12 * TILE_STEP;
     }
 
     const N = renderHand.length;
@@ -621,12 +627,15 @@ export default class GameScene extends Phaser.Scene {
 
     let startX;
     if (hasDrawnTile) {
-      // 14张：前13张左移给第14张留空间
-      startX = this._tile12Anchor - this.TILE_W / 2 - EXTRA_GAP - (12 * TILE_STEP);
+      // 14张：前13张左移20px给第14张留空间
+      startX = this._tile12Anchor - this.TILE_W / 2 - EXTRA_GAP - (12 * TILE_STEP) - 20;
     } else {
       // ≤13张：右对齐到锚点
       startX = this._tile12Anchor - this.TILE_W / 2 - ((baseCount - 1) * TILE_STEP);
     }
+
+    // 碰杠起点 = 当前手牌第1张的左边缘
+    this._meldAnchorX = startX;
 
     this._handLeftX = startX;
     if (!this._handBounds) this._handBounds = {};
@@ -637,12 +646,12 @@ export default class GameScene extends Phaser.Scene {
     renderHand.forEach((tile, idx) => {
       let x;
       if (hasDrawnTile && idx >= 13) {
-        // 第14张：固定在锚点
-        x = this._tile12Anchor - this.TILE_W / 2;
+        // 第14张：固定在锚点右移15px
+        x = this._tile12Anchor - this.TILE_W / 2 + 15;
       } else if (hasDrawnTile) {
-        // 前13张：左移 EXTRA_GAP，右对齐
+        // 前13张：左移 EXTRA_GAP 再左移20px，右对齐
         const handIdx = idx; // 0..12
-        x = this._tile12Anchor - this.TILE_W / 2 - EXTRA_GAP - (12 - handIdx) * TILE_STEP;
+        x = this._tile12Anchor - this.TILE_W / 2 - EXTRA_GAP - (12 - handIdx) * TILE_STEP - 20;
       } else {
         // ≤13张：右对齐到锚点
         x = this._tile12Anchor - this.TILE_W / 2 - ((N - 1) - idx) * TILE_STEP;
@@ -727,7 +736,7 @@ export default class GameScene extends Phaser.Scene {
       } else if (rel === 1) {
         // 右家(右侧)：底端固定，13张不动，14张向下偏移10px
         if (!this._yBottom_rel1) {
-          this._yBottom_rel1 = Math.floor(H / 2 + 5.5 * oStep + oH);
+          this._yBottom_rel1 = Math.floor(H / 2 + 5.5 * oStep + oH) - 20;
         }
         const baseStartY = this._yBottom_rel1 - 13 * oStep;
         this._handBounds[1] = { bottomY: this._yBottom_rel1, x: W - 68, oW, oH };
@@ -741,7 +750,7 @@ export default class GameScene extends Phaser.Scene {
       } else {
         // 左家(左侧)：顶端固定，13张不动，14张向下偏移10px
         if (!this._yTop_rel3) {
-          this._yTop_rel3 = Math.floor(H / 2 - 6.5 * oStep);
+          this._yTop_rel3 = Math.floor(H / 2 - 6.5 * oStep) - 20;
         }
         const baseStartY = this._yTop_rel3;
         this._handBounds[3] = { topY: this._yTop_rel3, x: 68, oW, oH };
@@ -1106,6 +1115,10 @@ export default class GameScene extends Phaser.Scene {
         if (data.event.type === 'discard') {
           this._lastDiscardTile = data.event.tileType;
           this._lastDiscardSeat = data.event.seat;
+          // 庄家打出第一张牌后，清除"X为庄家"提示
+          if (this.hintText && this.hintText.visible && this.hintText.text && this.hintText.text.includes('为庄家')) {
+            this.hintText.setVisible(false);
+          }
         } else if (data.event.type === 'pong' || data.event.type === 'kong' || data.event.type === 'win' || data.event.type === 'flow') {
           this._lastDiscardTile = null;
         }
@@ -1652,7 +1665,7 @@ export default class GameScene extends Phaser.Scene {
         allResults.forEach((hr, idx) => {
           const x = colX[idx] || (W / 2);
           const seatName = SEAT_NAMES[hr.seatIndex];
-          const horseLabel = hr.count > 0 ? `🐴${hr.count}匹` : '';
+          const horseLabel = hr.count > 0 ? `🐴${Math.max(0, hr.count - 1)}匹` : '';
           this.add.text(x, horseY, `${seatName}(${hr.playerName}) ${horseLabel}`, {
             fontSize: '13px', color: '#ffaa00', fontStyle: 'bold',
             padding: { top: 2, bottom: 2 },
@@ -1747,12 +1760,12 @@ export default class GameScene extends Phaser.Scene {
         let labelX, labelY, labelOriginX;
 
         if (rel === 0) {
-          // 自己：手牌上方，下移0.2牌位
-          labelX = handCX; labelY = baseY - handHH - 8 - tileH + 14;
+          // 自己：手牌上方，左移20px
+          labelX = handCX - 20; labelY = baseY - handHH - 8 - tileH + 14;
           labelOriginX = 0.5;
         } else if (rel === 2) {
-          // 对家：手牌下方，上移15px
-          labelX = handCX; labelY = baseY + 29;
+          // 对家：手牌下方，右移20px
+          labelX = handCX + 20; labelY = baseY + 29;
           labelOriginX = 0.5;
         } else if (rel === 1) {
           // 右边家：手牌左边，再左移1牌位，上移0.4牌位

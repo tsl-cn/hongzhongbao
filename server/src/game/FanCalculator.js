@@ -18,8 +18,8 @@ class FanCalculator {
   static calculate(hand, melds, options = {}) {
     const wildCount = hand.filter(t => t === WILD_TILE).length;
 
-    // 1. 判断是否能胡
-    const winResult = FanCalculator.checkWin(hand);
+    // 1. 判断是否能胡（传melds以支持杠后手牌张数变化）
+    const winResult = FanCalculator.checkWin(hand, melds);
     if (!winResult.isWin) {
       return { isWin: false, fan: 0, baseFan: 0, multiplier: 1, patterns: [] };
     }
@@ -56,7 +56,7 @@ class FanCalculator {
       const fanA = FanCalculator._computeFan(resolvedA, shared._multiplier || 1);
 
       // Path B: 用红中当万能牌组成标准牌型
-      const stdResult = FanCalculator._checkStandard(hand);
+      const stdResult = FanCalculator._checkStandard(hand, 0);
       let typeB, typePatternsB;
       if (stdResult.isWin) {
         typeB = 'standard';
@@ -185,11 +185,16 @@ class FanCalculator {
    * 判断手牌是否能胡（含红中万能牌）
    * 返回 { isWin, type: 'standard'|'sevenPairs'|'thirteenOrphans', combinations? }
    */
-  static checkWin(hand) {
+  /**
+   * @param {number[]} hand - 手牌
+   * @param {object[]} [melds] - 副露，含杠时手牌张数=14-杠数×3
+   */
+  static checkWin(hand, melds = []) {
+    const kongCount = melds.filter(m => m.type && m.type.includes('kong')).length;
+
     // 四红中：4张红中直接胡（含非庄家13张）
     const wildCount = hand.filter(t => t === WILD_TILE).length;
     if (wildCount >= 4) {
-      // 红中万能牌，4张红中可配成任意牌型
       return { isWin: true, type: 'fourWilds' };
     }
 
@@ -200,13 +205,15 @@ class FanCalculator {
     }
 
     // 先检查七小对
-    const sevenPairResult = FanCalculator._checkSevenPairs(hand);
-    if (sevenPairResult.isWin) {
-      return { isWin: true, type: 'sevenPairs', ...sevenPairResult };
+    if (kongCount === 0) {
+      const sevenPairResult = FanCalculator._checkSevenPairs(hand);
+      if (sevenPairResult.isWin) {
+        return { isWin: true, type: 'sevenPairs', ...sevenPairResult };
+      }
     }
 
-    // 检查标准牌型 (4面子+1将)
-    const standardResult = FanCalculator._checkStandard(hand);
+    // 检查标准牌型：有杠时手牌张数=14-杠数×3
+    const standardResult = FanCalculator._checkStandard(hand, kongCount);
     if (standardResult.isWin) {
       return { isWin: true, type: 'standard', ...standardResult };
     }
@@ -367,8 +374,13 @@ class FanCalculator {
    * 检查标准牌型 (4面子+1对)
    * 使用递归+回溯，红中作万能牌替代
    */
-  static _checkStandard(hand) {
-    if (hand.length !== 14) return { isWin: false };
+  /**
+   * @param {number[]} hand - 手牌
+   * @param {number} [kongCount=0] - 杠数，每杠手牌减少3张
+   */
+  static _checkStandard(hand, kongCount = 0) {
+    const expectedLen = 14 - 3 * kongCount;
+    if (hand.length !== expectedLen) return { isWin: false };
 
     const counts = {};
     for (const t of hand) {
@@ -387,7 +399,7 @@ class FanCalculator {
         remainCounts[t] -= 2;
       } else if (remainCounts[t] === 1 && wildCount >= 1) {
         remainCounts[t] -= 1;
-        if (FanCalculator._canFormMelds(remainCounts, wildCount - 1)) {
+        if (FanCalculator._canFormMelds(remainCounts, wildCount - 1, 0, 4 - kongCount)) {
           return { isWin: true, pairTile: t };
         }
         continue;
@@ -397,7 +409,7 @@ class FanCalculator {
 
       if (remainCounts[t] === 0) delete remainCounts[t];
 
-      if (FanCalculator._canFormMelds(remainCounts, wildCount)) {
+      if (FanCalculator._canFormMelds(remainCounts, wildCount, 0, 4 - kongCount)) {
         return { isWin: true, pairTile: t };
       }
     }
@@ -405,7 +417,7 @@ class FanCalculator {
     // 将牌是红中
     if (wildCount >= 2) {
       const remainCounts = { ...counts };
-      if (FanCalculator._canFormMelds(remainCounts, wildCount - 2)) {
+      if (FanCalculator._canFormMelds(remainCounts, wildCount - 2, 0, 4 - kongCount)) {
         return { isWin: true, pairTile: WILD_TILE };
       }
     }
@@ -417,110 +429,99 @@ class FanCalculator {
    * 检查是否能组成4个面子（刻子或顺子）
    * 红中可替代任何牌
    */
-  static _canFormMelds(counts, wilds, depth = 0) {
-    if (depth >= 4) {
-      // 检查是否所有牌都用完了
+  /**
+   * 检查是否能组成面子（刻子或顺子）
+   * @param {object} counts - 牌型计数
+   * @param {number} wilds - 剩余红中数
+   * @param {number} depth - 已组面子数
+   * @param {number} meldsTarget - 目标面子总数（默认4，有杠时减少）
+   */
+  static _canFormMelds(counts, wilds, depth = 0, meldsTarget = 4) {
+    if (depth >= meldsTarget) {
       const remaining = Object.values(counts).reduce((s, c) => s + c, 0);
       return remaining <= wilds;
     }
 
-    // 找到第一张非零的牌
     const tiles = Object.keys(counts)
       .map(Number)
       .filter(t => counts[t] > 0)
       .sort((a, b) => a - b);
 
     if (tiles.length === 0) {
-      return wilds >= 4 - depth; // 剩下的都用红中补
+      return wilds >= meldsTarget - depth;
     }
 
     const first = tiles[0];
 
-    // 尝试刻子 (三张相同)
+    // 尝试刻子
     if (counts[first] >= 3) {
       const nextCounts = { ...counts };
       nextCounts[first] -= 3;
       if (nextCounts[first] === 0) delete nextCounts[first];
-      if (FanCalculator._canFormMelds(nextCounts, wilds, depth + 1)) return true;
+      if (FanCalculator._canFormMelds(nextCounts, wilds, depth + 1, meldsTarget)) return true;
     }
 
-    // 用红中补刻子 (counts[first] === 2, 用1个红中)
     if (counts[first] === 2 && wilds >= 1) {
       const nextCounts = { ...counts };
       delete nextCounts[first];
-      if (FanCalculator._canFormMelds(nextCounts, wilds - 1, depth + 1)) return true;
+      if (FanCalculator._canFormMelds(nextCounts, wilds - 1, depth + 1, meldsTarget)) return true;
     }
 
-    // 用红中补刻子 (counts[first] === 1, 用2个红中)
     if (counts[first] === 1 && wilds >= 2) {
       const nextCounts = { ...counts };
       delete nextCounts[first];
-      if (FanCalculator._canFormMelds(nextCounts, wilds - 2, depth + 1)) return true;
+      if (FanCalculator._canFormMelds(nextCounts, wilds - 2, depth + 1, meldsTarget)) return true;
     }
 
     // 尝试顺子 (仅限万筒条)
-    if (!isHonor(first)) {
-      const suit = first <= 8 ? 'man' : first <= 17 ? 'pin' : 'sou';
-      const suitBase = suit === 'man' ? 0 : suit === 'pin' ? 9 : 18;
-
-      // 顺子 first, first+1, first+2
+    if (!isHonor(first) && first % 9 <= 7) {
       const t2 = first + 1;
       const t3 = first + 2;
+      const c1 = counts[first] || 0;
+      const c2 = counts[t2] || 0;
+      const c3 = counts[t3] || 0;
 
-      // 检查是否在同一花色内
-      if (first % 9 <= 7) { // first+1 在同一花色
-        const c1 = counts[first] || 0;
-        const c2 = counts[t2] || 0;
-        const c3 = counts[t3] || 0;
+      if (c2 >= 1 && c3 >= 1) {
+        const nextCounts = { ...counts };
+        nextCounts[first] = c1 - 1;
+        if (nextCounts[first] === 0) delete nextCounts[first];
+        nextCounts[t2] = c2 - 1;
+        if (nextCounts[t2] === 0) delete nextCounts[t2];
+        nextCounts[t3] = c3 - 1;
+        if (nextCounts[t3] === 0) delete nextCounts[t3];
+        if (FanCalculator._canFormMelds(nextCounts, wilds, depth + 1, meldsTarget)) return true;
+      }
 
-        // 正常顺子
-        if (c2 >= 1 && c3 >= 1) {
+      if (wilds >= 1) {
+        if (c1 >= 1 && c3 >= 1) {
           const nextCounts = { ...counts };
-          nextCounts[first] -= 1;
+          nextCounts[first] = c1 - 1;
           if (nextCounts[first] === 0) delete nextCounts[first];
-          nextCounts[t2] -= 1;
-          if (nextCounts[t2] === 0) delete nextCounts[t2];
-          nextCounts[t3] -= 1;
+          nextCounts[t3] = c3 - 1;
           if (nextCounts[t3] === 0) delete nextCounts[t3];
-          if (FanCalculator._canFormMelds(nextCounts, wilds, depth + 1)) return true;
+          if (FanCalculator._canFormMelds(nextCounts, wilds - 1, depth + 1, meldsTarget)) return true;
         }
-
-        // 用红中补一个位置
-        if (wilds >= 1) {
-          // 缺 t2
-          if (c1 >= 1 && c3 >= 1) {
-            const nextCounts = { ...counts };
-            nextCounts[first] -= 1;
-            if (nextCounts[first] === 0) delete nextCounts[first];
-            nextCounts[t3] -= 1;
-            if (nextCounts[t3] === 0) delete nextCounts[t3];
-            if (FanCalculator._canFormMelds(nextCounts, wilds - 1, depth + 1)) return true;
-          }
-          // 缺 t3
-          if (c1 >= 1 && c2 >= 1) {
-            const nextCounts = { ...counts };
-            nextCounts[first] -= 1;
-            if (nextCounts[first] === 0) delete nextCounts[first];
-            nextCounts[t2] -= 1;
-            if (nextCounts[t2] === 0) delete nextCounts[t2];
-            if (FanCalculator._canFormMelds(nextCounts, wilds - 1, depth + 1)) return true;
-          }
-        }
-
-        // 用红中补两个位置
-        if (wilds >= 2 && c1 >= 1) {
+        if (c1 >= 1 && c2 >= 1) {
           const nextCounts = { ...counts };
-          nextCounts[first] -= 1;
+          nextCounts[first] = c1 - 1;
           if (nextCounts[first] === 0) delete nextCounts[first];
-          if (FanCalculator._canFormMelds(nextCounts, wilds - 2, depth + 1)) return true;
+          nextCounts[t2] = c2 - 1;
+          if (nextCounts[t2] === 0) delete nextCounts[t2];
+          if (FanCalculator._canFormMelds(nextCounts, wilds - 1, depth + 1, meldsTarget)) return true;
         }
+      }
+
+      if (wilds >= 2 && c1 >= 1) {
+        const nextCounts = { ...counts };
+        nextCounts[first] = c1 - 1;
+        if (nextCounts[first] === 0) delete nextCounts[first];
+        if (FanCalculator._canFormMelds(nextCounts, wilds - 2, depth + 1, meldsTarget)) return true;
       }
     }
 
-    // 用3个红中凑一个面子
     if (wilds >= 3) {
       const nextCounts = { ...counts };
-      if (FanCalculator._canFormMelds(nextCounts, wilds - 3, depth + 1)) return true;
+      if (FanCalculator._canFormMelds(nextCounts, wilds - 3, depth + 1, meldsTarget)) return true;
     }
 
     return false;
@@ -565,14 +566,12 @@ class FanCalculator {
       }
     } else {
       // 平胡（自摸）：4面子含顺子，雀头非字牌/红中
-      // 有碰/明杠/暗杠都不算平胡
+      // 有碰不算平胡，有杠仍算（杠算面子之一）
       const hasPong = melds.some(m => m.type === 'pong');
-      const hasKong = melds.some(m => m.type === 'kong' || m.type === 'exposed_kong' || m.type === 'concealed_kong');
-      const canPingHu = !hasPong && !hasKong;
-      if (canPingHu) {
+      if (!hasPong) {
         const pairTile = winResult && winResult.pairTile;
         if (pairTile !== undefined && pairTile !== WILD_TILE && !isHonor(pairTile)) {
-          patterns.push({ name: '平胡（自摸）', fan: 2, desc: '杂色顺或刻子+1雀头（碰牌后无杠不能胡）' });
+          patterns.push({ name: '平胡（自摸）', fan: 2, desc: '4面子+1雀头（无碰，可含杠），雀头非字牌/红中' });
         }
       }
     }
