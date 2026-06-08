@@ -504,6 +504,7 @@ class GameState {
     // 检查杠后自摸
     if (this._checkSelfWin(seat)) {
       this.phase = PHASE.ACTION;
+      this.actionQueue = [{ type: 'win', seat, tileType: drawTile, isSelfDraw: true }];
       return {
         type: 'kong',
         seat,
@@ -757,6 +758,12 @@ class GameState {
     if (nonWild.length === 0) return null;
     const idx = Math.floor(Math.random() * nonWild.length);
     return nonWild[idx];
+  }
+
+  /** 跳过当前出牌，强制推进到下家摸牌（手牌全红中极端情况兜底） */
+  advanceToNextTurn() {
+    this._nextTurn();
+    this.phase = PHASE.DRAW;
   }
 
   /** 通过ID找座位号 */

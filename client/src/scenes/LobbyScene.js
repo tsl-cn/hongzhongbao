@@ -304,11 +304,12 @@ export default class LobbyScene extends Phaser.Scene {
     }).setOrigin(0, 0.5);
     this.roomItemsContainer.add(roomText);
 
-    // 占位圆点
+    // 占位圆点（只亮真人位）
+    const humanCount = (room.players || []).filter(p => !p.isAI).length;
     const dotGap = 24;
     const dotStartX = CX - 40;
     for (let s = 0; s < 4; s++) {
-      const filled = s < room.playerCount;
+      const filled = s < humanCount;
       const dot = this.add.graphics();
       dot.fillStyle(filled ? 0x4aff4a : 0x555555, 1);
       dot.fillCircle(dotStartX + s * dotGap, y, 6);
@@ -316,7 +317,7 @@ export default class LobbyScene extends Phaser.Scene {
     }
 
     // 人数文字
-    const countText = this.add.text(dotStartX + 4 * dotGap + 10, y, `${room.playerCount}/4人`, {
+    const countText = this.add.text(dotStartX + 4 * dotGap + 10, y, `${humanCount}/4人`, {
       fontSize: '13px', color: '#aaaaaa',
     }).setOrigin(0, 0.5);
     this.roomItemsContainer.add(countText);
@@ -791,6 +792,7 @@ export default class LobbyScene extends Phaser.Scene {
 
     const text = this.add.text(x, y, label, {
       fontSize: '16px', color: '#' + cols.buttonText.toString(16).padStart(6, '0'), fontStyle: 'bold',
+      padding: { top: 4, bottom: 2 },
     }).setOrigin(0.5);
     cv.add(text);
   }

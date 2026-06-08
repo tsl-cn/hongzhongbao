@@ -90,8 +90,8 @@ export default class GameScene extends Phaser.Scene {
     }).setOrigin(0.5).setDepth(10);
 
     // 右上角牌墙剩余张数
-    this.wallText = this.add.text(W - 48, 48, '', {
-      fontSize: '28px', color: '#ff8800', fontStyle: 'bold', padding: { top: 2, bottom: 1 },
+    this.wallText = this.add.text(W - 62, 20, '', {
+      fontSize: '32px', color: '#ff8800', fontStyle: 'bold', padding: { top: 1, bottom: 0 },
     }).setOrigin(1, 0);
 
     this.hintText = this.add.text(W / 2, H / 2, '', {
@@ -336,10 +336,10 @@ export default class GameScene extends Phaser.Scene {
       this.hintText.setVisible(true).setText(`🎲 ${seatName}(${p.name}) 摇骰: ?`);
 
       // 骰子动画：快速切换点数
-      const dice1 = this.add.text(W / 2 - 30, H / 2 - 60, '⚀', {
+      const dice1 = this.add.text(W / 2 - 30, H / 2 - 115, '⚀', {
         fontSize: '48px', color: '#ffffff',
       }).setOrigin(0.5).setDepth(20);
-      const dice2 = this.add.text(W / 2 + 30, H / 2 - 60, '⚀', {
+      const dice2 = this.add.text(W / 2 + 30, H / 2 - 115, '⚀', {
         fontSize: '48px', color: '#ffffff',
       }).setOrigin(0.5).setDepth(20);
 
@@ -428,6 +428,13 @@ export default class GameScene extends Phaser.Scene {
     }).setOrigin(0.5).setDepth(51);
     this._horseElements.push(title);
 
+    // 买马20秒倒计时，超时默认不买马
+    this._startTimer(20, () => {
+      this._cleanupHorseUI();
+      this.socket.emit('select_horse_count', { count: 0 });
+      this._showStatusBanner('不买马，开始游戏');
+    });
+
     // 买马按钮（5个横排：不买/1/2/3/4匹）
     const horseBtnDefs = [
       { label: '不买', x: -170, color: 0x664444, count: 0 },
@@ -438,6 +445,7 @@ export default class GameScene extends Phaser.Scene {
     ];
     horseBtnDefs.forEach(def => {
       this._makeHorseBtn(px + def.x, py + 20, def.label, def.color, () => {
+        this._stopTimer();
         if (def.count === 0) {
           this._cleanupHorseUI();
           this.socket.emit('select_horse_count', { count: 0 });
@@ -551,39 +559,44 @@ export default class GameScene extends Phaser.Scene {
       const hb = this._handBounds && this._handBounds[rel];
 
       let startX, startY, dirX, dirY, angle = 0;
+      let gap = hGap; // 每方向可独立调间隔
       if (rel === 0) {
-        // 自己：第14张右边缘下方，上移20px，水平向右
+        // 自己：第14张右边缘下方，水平向右，极限缩小间隔
         const rightEdge = (this._tile12Anchor || 0) + this.TILE_W / 2 + 15;
         startX = rightEdge + 4;
         startY = this.HAND_Y + this.TILE_H + 4 - 20;
         dirX = 1; dirY = 0;
+        gap = 0;
       } else if (rel === 2 && hb) {
-        // 对家：手牌左上，贴上桌边，横排向右
+        // 对家：手牌左上，左移100px下移10px，横排向右，极限缩小间隔
         const leftEdge = hb.rightX - 13 * (hb.oW + 1);
-        startX = leftEdge;
-        startY = 4;
+        startX = leftEdge - 100;
+        startY = 14;
         dirX = 1; dirY = 0;
+        gap = 0;
       } else if (rel === 3 && hb) {
-        // 左家：手牌左下，下移200px右移20px，竖排向上
+        // 左家：手牌左下，竖排向上，极窄间隔
         const bottomY = hb.topY + 12 * (hb.oW + 1);
         startX = 4 + 20;
         startY = bottomY - hH + 200;
         dirX = 0; dirY = -1;
         angle = 90;
+        gap = 1;
       } else if (rel === 1 && hb) {
-        // 右家：手牌右上，左移20px，竖排向上
+        // 右家：手牌右上，下移30px，竖排向上，极窄间隔
         const topY = hb.bottomY - 12 * (hb.oW + 1);
-        startX = (W - hW - 4) - 20;
-        startY = topY - hH;
+        startX = W - hW - 4;
+        startY = topY - hH + 30;
         dirX = 0; dirY = -1;
         angle = -90;
+        gap = 1;
       } else {
         startX = 0; startY = 0; dirX = 1; dirY = 0;
       }
 
       for (let h = 0; h < count; h++) {
-        const hx = startX + h * (hW + hGap) * dirX;
-        const hy = startY + h * (hH + hGap) * dirY;
+        const hx = startX + h * (hW + gap) * dirX;
+        const hy = startY + h * (hH + gap) * dirY;
         const tile = TileRenderer.createTile(this, 0, hx, hy, hW, hH, true);
         tile.setDepth(5).setAlpha(0.9).setScale(0.8);
         if (angle !== 0) tile.setAngle(angle);
@@ -604,8 +617,6 @@ export default class GameScene extends Phaser.Scene {
     this._clearTiles();
     const W = this.cameras.main.width;
     const TILE_STEP = this.TILE_W + 1;
-    const EXTRA_GAP = Math.floor(this.TILE_W / 2);
-
     // 构建渲染用的手牌数组：刚摸的牌移到最右边
     let renderHand = [...this.hand];
     if (this.lastDrawTile !== null && renderHand.length === 14) {
@@ -616,23 +627,17 @@ export default class GameScene extends Phaser.Scene {
       }
     }
 
-    // 固定锚点：第13张牌（已排序的第12位）右边缘固定
+    // 固定锚点：第13张牌（已排序的第12位）右边缘固定（整体左移40px）
     if (!this._tile12Anchor) {
-      this._tile12Anchor = Math.floor(W / 2 + 6 * TILE_STEP + this.TILE_W / 2);
+      this._tile12Anchor = Math.floor(W / 2 + 6 * TILE_STEP + this.TILE_W / 2) - 40;
     }
 
     const N = renderHand.length;
     const hasDrawnTile = N >= 14;
     const baseCount = hasDrawnTile ? 13 : N; // 前13张或全部
 
-    let startX;
-    if (hasDrawnTile) {
-      // 14张：前13张左移20px给第14张留空间
-      startX = this._tile12Anchor - this.TILE_W / 2 - EXTRA_GAP - (12 * TILE_STEP) - 20;
-    } else {
-      // ≤13张：右对齐到锚点
-      startX = this._tile12Anchor - this.TILE_W / 2 - ((baseCount - 1) * TILE_STEP);
-    }
+    // 固定右对齐：无论12/13/14张，前13张位置始终不变，第14张在右侧展开
+    let startX = this._tile12Anchor - this.TILE_W / 2 - ((baseCount - 1) * TILE_STEP);
 
     // 碰杠起点 = 当前手牌第1张的左边缘
     this._meldAnchorX = startX;
@@ -646,15 +651,11 @@ export default class GameScene extends Phaser.Scene {
     renderHand.forEach((tile, idx) => {
       let x;
       if (hasDrawnTile && idx >= 13) {
-        // 第14张：固定在锚点右移15px
-        x = this._tile12Anchor - this.TILE_W / 2 + 15;
-      } else if (hasDrawnTile) {
-        // 前13张：左移 EXTRA_GAP 再左移20px，右对齐
-        const handIdx = idx; // 0..12
-        x = this._tile12Anchor - this.TILE_W / 2 - EXTRA_GAP - (12 - handIdx) * TILE_STEP - 20;
+        // 第14张：在锚点右侧展开，前13张位置不变，间隔半牌位
+        x = this._tile12Anchor - this.TILE_W / 2 + 90;
       } else {
-        // ≤13张：右对齐到锚点
-        x = this._tile12Anchor - this.TILE_W / 2 - ((N - 1) - idx) * TILE_STEP;
+        // 全部右对齐到锚点（13张/14张前13张/碰杠后不足13张，位置一致无抖动）
+        x = this._tile12Anchor - this.TILE_W / 2 - ((baseCount - 1) - idx) * TILE_STEP;
       }
 
       const liftY = (this.selectedTileIdx === idx) ? this.HAND_Y - this.TILE_H / 2 : this.HAND_Y;
@@ -736,7 +737,7 @@ export default class GameScene extends Phaser.Scene {
       } else if (rel === 1) {
         // 右家(右侧)：底端固定，13张不动，14张向下偏移10px
         if (!this._yBottom_rel1) {
-          this._yBottom_rel1 = Math.floor(H / 2 + 5.5 * oStep + oH) - 20;
+          this._yBottom_rel1 = Math.floor(H / 2 + 5.5 * oStep + oH) - 50;
         }
         const baseStartY = this._yBottom_rel1 - 13 * oStep;
         this._handBounds[1] = { bottomY: this._yBottom_rel1, x: W - 68, oW, oH };
@@ -750,7 +751,7 @@ export default class GameScene extends Phaser.Scene {
       } else {
         // 左家(左侧)：顶端固定，13张不动，14张向下偏移10px
         if (!this._yTop_rel3) {
-          this._yTop_rel3 = Math.floor(H / 2 - 6.5 * oStep) - 20;
+          this._yTop_rel3 = Math.floor(H / 2 - 6.5 * oStep) - 50;
         }
         const baseStartY = this._yTop_rel3;
         this._handBounds[3] = { topY: this._yTop_rel3, x: 68, oW, oH };
@@ -999,8 +1000,14 @@ export default class GameScene extends Phaser.Scene {
       // 跳过按钮紧跟在后
       const skipBtn = this._makeRoundedBtn(startX + xOff + btnW / 2, rowY,
         btnW, btnH, 0x666666, '跳过', '16px', '#ffffff',
-        () => { this.socket.skipAction(); this._clearActions(); }, 15);
+        () => { this._stopTimer(); this.socket.skipAction(); this._clearActions(); }, 15);
       this.actionButtons.push(skipBtn);
+    });
+
+    // 操作超时共用同一倒计时 20秒
+    this._startTimer(20, () => {
+      this.socket.skipAction();
+      this._clearActions();
     });
   }
 
@@ -1062,6 +1069,7 @@ export default class GameScene extends Phaser.Scene {
   }
 
   _clearActions() {
+    this._stopTimer();
     this.actionButtons.forEach(b => b.destroy());
     this.actionButtons = [];
     // 清除牌河高亮
@@ -1106,7 +1114,7 @@ export default class GameScene extends Phaser.Scene {
 
     this.socket.on('game_state_update', (data) => {
       const state = data.state;
-      if (this.wallText) this.wallText.setText(`剩余: ${state.wallRemaining}张`);
+      if (this.wallText) this.wallText.setText(`剩 ${state.wallRemaining}`);
       // 更新牌局日志
       if (state.gameLog) this._updateLogDisplay(state.gameLog);
 
@@ -1233,7 +1241,7 @@ export default class GameScene extends Phaser.Scene {
     this.micMuted = false;
 
     const micX = W / 2 - 223; // 昵称左侧4牌位
-    const micY = H - 25;      // 与昵称同高
+    const micY = H - 15;      // 下移10px
 
     const createMic = (muted) => {
       if (this.micBtn) this.micBtn.destroy();
@@ -1251,10 +1259,11 @@ export default class GameScene extends Phaser.Scene {
 
   // ========== 倒计时 ==========
 
-  _startTimer(seconds) {
+  _startTimer(seconds, onTimeout) {
     this._stopTimer();
     this.timerRemaining = seconds;
     this.timerActive = true;
+    this._timerOnTimeout = onTimeout || null;
     this.timerText.setVisible(true).setText(`${seconds}`);
 
     this.timerEvent = this.time.addEvent({
@@ -1262,7 +1271,10 @@ export default class GameScene extends Phaser.Scene {
       callback: () => {
         this.timerRemaining--;
         if (this.timerRemaining <= 0) {
+          const cb = this._timerOnTimeout;
+          this._timerOnTimeout = null;
           this._stopTimer();
+          if (cb) cb();
           return;
         }
         // 颜色渐变：>15 橙黄，6-15 橙红，<6 红+闪烁
@@ -1280,6 +1292,7 @@ export default class GameScene extends Phaser.Scene {
   }
 
   _stopTimer() {
+    this._timerOnTimeout = null;
     if (this.timerEvent) {
       this.timerEvent.remove();
       this.timerEvent = null;
@@ -1300,7 +1313,7 @@ export default class GameScene extends Phaser.Scene {
     const params = new URLSearchParams(window.location.search);
     const password = params.get('password') || '';
 
-    this._makeRoundedBtn(W - 48, 16, 80, 28, 0x3a6a4e, '📋', '16px', '#ffffff', () => {
+    this._makeRoundedBtn(W - 18, 22, 36, 36, 0x3a6a4e, '分享\n房间', '11px', '#ffffff', () => {
       const host = window.location.host;
       const playerName = this.socket.playerName || `玩家${Math.floor(Math.random() * 10000)}`;
       const link = `http://${host}?room=${roomId}`
@@ -1309,7 +1322,7 @@ export default class GameScene extends Phaser.Scene {
 
       if (navigator.clipboard) {
         navigator.clipboard.writeText(link).then(() => {
-          this._flashText('已复制房间链接', '#44ff44');
+          this._flashText('已复制房间地址到剪贴板，请到微信粘贴地址，邀请好友', '#44ff44');
         }).catch(() => {
           this._flashText('复制失败，请手动复制', '#ff4444');
         });
@@ -1331,7 +1344,7 @@ export default class GameScene extends Phaser.Scene {
       targets: flash,
       alpha: 0,
       y: 30,
-      duration: 1500,
+      duration: 5000,
       ease: 'Power2',
       onComplete: () => flash.destroy(),
     });
@@ -1351,10 +1364,10 @@ export default class GameScene extends Phaser.Scene {
       if (rel === 0) { btnX = W / 2; btnY = H - 36; }        // 自己（下移3px）
       else if (rel === 2) { btnX = W / 2; btnY = 18; }        // 对家
       else if (rel === 1) { btnX = W - 24; btnY = H / 2; }    // 右家（左移8px）
-      else { btnX = 21; btnY = H / 2; }                        // 左家（右移5px）
+      else { btnX = 26; btnY = H / 2; }                        // 左家（风位字右10px）
 
       // 位置偏移：自己→左边，对家→右边，左右→上方
-      if (rel === 0) btnX -= 110;
+      if (rel === 0) btnX -= 120;
       else if (rel === 2) btnX += 110;
       else btnY -= 48;
 
@@ -1390,11 +1403,11 @@ export default class GameScene extends Phaser.Scene {
 
         hitZone.on('pointerdown', () => {
           if (this.aiControlStates[i]) {
-            // 已点亮 → 直接熄灭（退出托管）
-            this.socket.cancelAiTakeover();
+            // 已点亮 → 确认退出托管
+            this._showAiConfirmDialog('exit');
           } else {
             // 未点亮 → 确认弹窗
-            this._showAiConfirmDialog();
+            this._showAiConfirmDialog('enter');
           }
         });
       }
@@ -1426,13 +1439,14 @@ export default class GameScene extends Phaser.Scene {
     }
   }
 
-  /** AI托管确认弹窗（嵌入式，类似买马面板） */
-  _showAiConfirmDialog() {
+  /** AI托管确认弹窗（嵌入式，类似买马面板），mode='enter'|'exit' */
+  _showAiConfirmDialog(mode) {
     if (this._aiDialogElements) return;
 
     const W = this.cameras.main.width;
     const H = this.cameras.main.height;
     this._aiDialogElements = [];
+    const isEnter = mode !== 'exit';
 
     // 手牌半透明
     this.tileElements.forEach(t => t.setAlpha(0.3));
@@ -1448,12 +1462,12 @@ export default class GameScene extends Phaser.Scene {
     panelBg.strokeRoundedRect(px - pw / 2, py - ph / 2, pw, ph, 14);
     this._aiDialogElements.push(panelBg);
 
-    const title = this.add.text(px, py - 22, '🤖 AI托管', {
+    const title = this.add.text(px, py - 22, isEnter ? '🤖 AI托管' : '👤 取消托管', {
       fontSize: '18px', color: '#ffd700', fontStyle: 'bold',
     }).setOrigin(0.5).setDepth(61);
     this._aiDialogElements.push(title);
 
-    const sub = this.add.text(px, py + 2, '由AI代打，单击「托」退出', {
+    const sub = this.add.text(px, py + 2, isEnter ? '由AI代打，单击「托」退出' : '恢复手动出牌，取消AI托管', {
       fontSize: '12px', color: '#aaaaaa',
     }).setOrigin(0.5).setDepth(61);
     this._aiDialogElements.push(sub);
@@ -1478,7 +1492,11 @@ export default class GameScene extends Phaser.Scene {
       .setInteractive({ useHandCursor: true }).setDepth(62);
     okHit.on('pointerdown', () => {
       this._cleanupAiPanel();
-      this.socket.requestAiTakeover();
+      if (isEnter) {
+        this.socket.requestAiTakeover();
+      } else {
+        this.socket.cancelAiTakeover();
+      }
     });
     const okText = this.add.text(px + 45, py + 42, '确定', {
       fontSize: '14px', color: '#ffffff', fontStyle: 'bold',
@@ -1789,8 +1807,8 @@ export default class GameScene extends Phaser.Scene {
           const totalColor = total > 0 ? '#44ff44' : total < 0 ? '#ff4444' : '#aaaaaa';
           const totalStr = `${total > 0 ? '+' : ''}${total}番`;
           let statsX = labelX, statsY = labelY + 14;
-          if (rel === 0) { statsX = labelX + 80; statsY = labelY + 14; }
-          else if (rel === 2) { statsX = labelX - 80; statsY = labelY + 14; }
+          if (rel === 0) { statsX = labelX + 110; statsY = labelY + 14; }
+          else if (rel === 2) { statsX = labelX - 110; statsY = labelY + 14; }
           else { statsX = labelX; statsY = labelY + 36 + 14; }
           this.add.text(statsX, statsY, totalStr, {
             fontSize: '24px', color: totalColor, fontStyle: 'bold',

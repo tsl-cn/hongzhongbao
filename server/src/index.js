@@ -605,7 +605,14 @@ function _autoDiscard(room) {
   if (!player) return;
 
   const tileType = room.gameState.getRandomDiscardTile();
-  if (tileType === null) return;
+  if (tileType === null) {
+    // 极端情况：手牌全红中无法出牌 → 强制推进下家摸牌
+    console.log(`[超时] ${player.name} 手牌全红中，跳过出牌`);
+    room.gameState.advanceToNextTurn();
+    const state = room.gameState.getState();
+    _broadcastGameState(room, state);
+    return;
+  }
 
   console.log(`[超时] ${player.name} 超时未出牌，自动打出 ${TILE_NAMES[tileType]}，AI托管`);
   const result = room.gameState.discardTile(tileType);
