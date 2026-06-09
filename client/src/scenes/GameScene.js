@@ -90,11 +90,11 @@ export default class GameScene extends Phaser.Scene {
     }).setOrigin(0.5).setDepth(10);
 
     // 右上角牌墙剩余张数
-    this.wallText = this.add.text(W - 62, 20, '', {
+    this.wallText = this.add.text(W - 62, 5, '', {
       fontSize: '32px', color: '#ff8800', fontStyle: 'bold', padding: { top: 1, bottom: 0 },
     }).setOrigin(1, 0);
 
-    this.hintText = this.add.text(W / 2, H / 2, '', {
+    this.hintText = this.add.text(W / 2, H / 2 + 70, '', {
       fontSize: '32px', color: '#ffdd00', fontStyle: 'bold', padding: { top: 4, bottom: 2 },
     }).setOrigin(0.5).setDepth(20).setVisible(false);
 
@@ -575,21 +575,21 @@ export default class GameScene extends Phaser.Scene {
         dirX = 1; dirY = 0;
         gap = 0;
       } else if (rel === 3 && hb) {
-        // 左家：手牌左下，竖排向上，极窄间隔
+        // 左家：手牌左下，竖排向上，紧贴手牌间距
         const bottomY = hb.topY + 12 * (hb.oW + 1);
         startX = 4 + 20;
         startY = bottomY - hH + 200;
         dirX = 0; dirY = -1;
         angle = 90;
-        gap = 1;
+        gap = -4;
       } else if (rel === 1 && hb) {
-        // 右家：手牌右上，下移30px，竖排向上，极窄间隔
+        // 右家：手牌右上，竖排向上，紧贴手牌间距
         const topY = hb.bottomY - 12 * (hb.oW + 1);
         startX = W - hW - 4;
         startY = topY - hH + 30;
         dirX = 0; dirY = -1;
         angle = -90;
-        gap = 1;
+        gap = -4;
       } else {
         startX = 0; startY = 0; dirX = 1; dirY = 0;
       }
@@ -737,7 +737,7 @@ export default class GameScene extends Phaser.Scene {
       } else if (rel === 1) {
         // 右家(右侧)：底端固定，13张不动，14张向下偏移10px
         if (!this._yBottom_rel1) {
-          this._yBottom_rel1 = Math.floor(H / 2 + 5.5 * oStep + oH) - 50;
+          this._yBottom_rel1 = Math.floor(H / 2 + 5.5 * oStep + oH) - 30;
         }
         const baseStartY = this._yBottom_rel1 - 13 * oStep;
         this._handBounds[1] = { bottomY: this._yBottom_rel1, x: W - 68, oW, oH };
@@ -751,7 +751,7 @@ export default class GameScene extends Phaser.Scene {
       } else {
         // 左家(左侧)：顶端固定，13张不动，14张向下偏移10px
         if (!this._yTop_rel3) {
-          this._yTop_rel3 = Math.floor(H / 2 - 6.5 * oStep) - 50;
+          this._yTop_rel3 = Math.floor(H / 2 - 6.5 * oStep) - 30;
         }
         const baseStartY = this._yTop_rel3;
         this._handBounds[3] = { topY: this._yTop_rel3, x: 68, oW, oH };
@@ -1005,6 +1005,7 @@ export default class GameScene extends Phaser.Scene {
     });
 
     // 操作超时共用同一倒计时 20秒
+    this.timerText.setPosition(W / 2, H / 2 + 60).setDepth(25);
     this._startTimer(20, () => {
       this.socket.skipAction();
       this._clearActions();
@@ -1070,6 +1071,8 @@ export default class GameScene extends Phaser.Scene {
 
   _clearActions() {
     this._stopTimer();
+    // 倒计时恢复为出牌位置
+    this.timerText.setPosition(160, 430).setDepth(15);
     this.actionButtons.forEach(b => b.destroy());
     this.actionButtons = [];
     // 清除牌河高亮
@@ -1650,26 +1653,12 @@ export default class GameScene extends Phaser.Scene {
       const fanLine = patternsStr
         ? `${data.result.fan}番${robSuffix}: ${patternsStr}`
         : `${data.result.fan}番${robSuffix}`;
-      this.add.text(W / 2, 143, fanLine, {
-        fontSize: '15px', color: '#ffaa00',
-        padding: { top: 3, bottom: 1 },
+      this.add.text(W / 2, 156, fanLine, {
+        fontSize: '30px', color: '#ff4500', fontStyle: 'bold',
+        padding: { top: 6, bottom: 3 },
       }).setOrigin(0.5).setDepth(depthBase + 1);
 
-      // 各家净收支概览
-      if (data.horseResults) {
-        const netLines = data.horseResults
-          .filter(hr => hr !== null)
-          .map(hr => {
-            const v = hr.pickerAdjustment;
-            const sign = v > 0 ? '+' : v < 0 ? '' : '';
-            return `${hr.playerName}: ${sign}${v}`;
-          })
-          .join('  |  ');
-        this.add.text(W / 2, 165, netLines, {
-          fontSize: '16px', color: '#ffdd88', fontStyle: 'bold',
-          padding: { top: 4, bottom: 1 },
-        }).setOrigin(0.5).setDepth(depthBase + 1);
-      }
+      // 各家净收支概览 —— 已删除
     }
 
     // ====== 每人独立结算明细（横排） ======

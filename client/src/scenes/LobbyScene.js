@@ -145,7 +145,7 @@ export default class LobbyScene extends Phaser.Scene {
     this._makeButton(CX + 100, 200, 180, 40, '🔄 刷新列表', 0, () => this._refreshList());
 
     // ---- 房间列表标题 ----
-    cv.add(this.add.text(CX, 245, '─ 等待中的房间 ─', {
+    cv.add(this.add.text(CX, 260, '─ 等待中的房间 ─', {
       fontSize: '15px', color: '#aaaaaa',
     }).setOrigin(0.5));
 
@@ -164,7 +164,7 @@ export default class LobbyScene extends Phaser.Scene {
     const currentId = getTheme().id;
     const btnW = 34, btnH = 34, gap = 4;
     const startX = CX + 420;
-    const y = 30;
+    const y = 45;
 
     themes.forEach((t, i) => {
       const x = startX + i * (btnW + gap);
@@ -268,7 +268,7 @@ export default class LobbyScene extends Phaser.Scene {
     if (this.inRoom) return;
 
     if (this.rooms.length === 0) {
-      const emptyText = this.add.text(CX, 275, '暂无房间，点击「创建房间」开一局吧', {
+      const emptyText = this.add.text(CX, 292, '暂无房间，点击「创建房间」开一局吧', {
         fontSize: '15px', color: '#888888',
       }).setOrigin(0.5);
       this.roomItemsContainer.add(emptyText);
@@ -276,7 +276,7 @@ export default class LobbyScene extends Phaser.Scene {
     }
 
     this.rooms.forEach((room, i) => {
-      const y = 270 + i * 48;
+      const y = 285 + i * 48;
       this._createRoomCard(room, i, y);
     });
   }
