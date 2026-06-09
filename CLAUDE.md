@@ -56,7 +56,10 @@ npm run build          # 构建前端到 client/dist/
 - 不强制推送 git 历史
 - 发布需确认
 
-## 已知完成状态 (2026-05-28)
-- 后端: GameState 状态机 / FanCalculator 18种番型 / Wall 牌墙 / HorseBuyer 买马 / RoomManager / AI 决策
-- 前端: BootScene / LobbyScene / GameScene / TileRenderer / SocketManager / VoiceChatManager
+## 已知完成状态 (2026-06-09)
+- **后端**: GameState 状态机 / FanCalculator 18种番型 / Wall 牌墙（四层安全洗牌）/ HorseBuyer 买马 / SettlementEngine 4层结算 / RoomManager / AI（Shanten+AiView信息防火墙）
+- **前端**: BootScene / LobbyScene / GameScene / TileRenderer / SocketManager / VoiceChatManager
+- **模块2**: 出牌30秒倒计时 / 超时AI托管 / 手动托管 / 断线AI接管+重连 / 分享房间
+- **结算页**: 马牌明细 / 净收支 / 累计统计 / 番型展示
+- **安全**: CSPRNG洗牌 / 256-bit盐 / 双重Fisher-Yates / 中局随机洗牌 / AI信息防火墙 / crypto替代Math.random
 - 完成度 ~95%，无严重已知问题
